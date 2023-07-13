@@ -153,10 +153,10 @@ def e2e(args):
                 writer.add_scalars('LOSS', {'train': tot_loss.item(), 'val': val_tot_loss.item()}, epoch)
                 writer.add_scalar('LR', optimizer.param_groups[0]['lr'], epoch)
 
-                train_grid = torchvision.utils.make_grid(train_imgs)
-                writer.add_image('train_images', train_grid, im_step)
-                val_grid = torchvision.utils.make_grid(val_imgs)
-                writer.add_image('val_images', val_grid, im_step)
+                # train_grid = torchvision.utils.make_grid(train_imgs)
+                # writer.add_image('train_images', train_grid, im_step)
+                # val_grid = torchvision.utils.make_grid(val_imgs)
+                # writer.add_image('val_images', val_grid, im_step)
 
             break
     else:
