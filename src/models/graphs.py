@@ -157,7 +157,7 @@ class E2E(nn.Module):
         super().__init__()
 
         # Project inputs into higher space
-        self.projector = InputProjector(in_chunks, out_chunks, device, doProject)
+        self.projector = InputProjector(in_chunks, out_chunks, device, doProject, dropout)
 
         # Perform message passing
         m_hidden = self.projector.get_out_lenght()
@@ -173,9 +173,9 @@ class E2E(nn.Module):
         # Define node predictor layer
         node_pred = []
         node_pred.append(nn.Linear(m_hidden, node_classes))
-        node_pred.append(nn.Dropout(p=dropout))
         node_pred.append(nn.LayerNorm(node_classes))
         self.node_pred = nn.Sequential(*node_pred)
+        self.drop = nn.Dropout(dropout)
 
     def forward(self, g, h):
 
@@ -184,6 +184,7 @@ class E2E(nn.Module):
         #     h = self.message_passing[l](g, h)
         h = self.message_passing(g,h)
         n = self.node_pred(h)
+        n = self.drop(n)
         e = self.edge_pred(g, h, n)
         
         return n, e
@@ -253,7 +254,7 @@ class GcnSAGELayer(nn.Module):
         return norm
 
 class InputProjector(nn.Module):
-    def __init__(self, in_chunks : list, out_chunks : int, device, doIt = True) -> None:
+    def __init__(self, in_chunks : list, out_chunks : int, device, doIt = True, dropout=0.2) -> None:
         super().__init__()
         
         if not doIt:
@@ -272,6 +273,7 @@ class InputProjector(nn.Module):
             chunk_module.append(nn.Linear(chunk, out_chunks))
             chunk_module.append(nn.LayerNorm(out_chunks))
             chunk_module.append(nn.ReLU())
+            chunk_module.append(nn.Dropout(dropout))
             modules.append(nn.Sequential(*chunk_module))
         
         self.modalities = nn.Sequential(*modules)
