@@ -75,14 +75,22 @@ def polar2(rect_src : list, rect_dst : list):
     
     a1, b1 = (x0_dst - x0_src), (y0_dst - y0_src)
     d1 = sqrt(a1**2 + b1**2)
-    sin1  = b1/d1
-    cos1  = a1/d1
+    if d1==0:
+        sin1  = 100
+        cos1  = 100
+    else:
+        sin1  = b1/d1
+        cos1  = a1/d1
     
     a2, b2 = (x1_dst - x1_src), (y1_dst - y1_src)
     d2 = sqrt(a2**2 + b2**2)
-    sin2  = b2/d2
-    cos2  = a2/d2
-
+    if d2==0:
+        sin2  = 100
+        cos2  = 100
+    else:
+        sin2  = b2/d2
+        cos2  = a2/d2
+    
     return d1, sin1, cos1, d2, sin2, cos2  
 
 def transform_image(img_path : str, scale_image=1.0):
