@@ -197,10 +197,10 @@ def to_bin(dist :int, angle : int, b=8):
 
 
 def to_bin2(d1,s1,c1,d2,s2,c2):
-    return torch.cat([torch.tensor(d1, dtype=torch.float32), 
-                      torch.tensor(s1, dtype=torch.float32),
-                      torch.tensor(c1, dtype=torch.float32),
-                      torch.tensor(d2, dtype=torch.float32),
-                      torch.tensor(s2, dtype=torch.float32),
-                      torch.tensor(c2, dtype=torch.float32)
+    return torch.cat([torch.tensor(d1, dtype=torch.float32).unsqueeze(1), 
+                      torch.tensor(s1, dtype=torch.float32).unsqueeze(1),
+                      torch.tensor(c1, dtype=torch.float32).unsqueeze(1),
+                      torch.tensor(d2, dtype=torch.float32).unsqueeze(1),
+                      torch.tensor(s2, dtype=torch.float32).unsqueeze(1),
+                      torch.tensor(c2, dtype=torch.float32).unsqueeze(1)
                       ], dim=1)
