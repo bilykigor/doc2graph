@@ -225,7 +225,7 @@ def e2e(args):
     print("AUC {:.4f}".format(auc))
     print("Accuracy {:.4f}".format(accuracy))
     print("F1 Edges: Macro {:.4f} - Micro {:.4f}".format(f1[0], f1[1]))
-    print("F1 Edges: None {:.4f} - Pairs {:.4f}".format(classes_f1[0], classes_f1[1]))
+    #print("F1 Edges: None {:.4f} - Pairs {:.4f}".format(classes_f1[0], classes_f1[1]))
     print("F1 Nodes: Macro {:.4f} - Micro {:.4f}".format(macro, micro))
 
     print("\n### AVG RESULTS ###")
