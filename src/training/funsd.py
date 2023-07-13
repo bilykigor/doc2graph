@@ -331,7 +331,11 @@ def entity_linking(args):
                 scores = model(tg, tg.ndata['feat'].to(device))
                 loss = compute_crossentropy_loss(scores.to(device), tg.edata['label'].to(device))
                 auc = compute_auc_mc(scores.to(device), tg.edata['label'].to(device))
-
+                
+                l2_lambda = 0.001
+                l2_norm = sum(p.pow(2.0).sum() for p in model.parameters())
+                loss = loss + l2_lambda * l2_norm
+    
                 optimizer.zero_grad()
                 loss.backward()
                 n = torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1)
