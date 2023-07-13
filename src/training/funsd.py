@@ -7,6 +7,7 @@ from torch.optim.lr_scheduler import StepLR, ReduceLROnPlateau
 import dgl 
 from torch.utils.tensorboard import SummaryWriter
 from torchvision import transforms
+import torchvision
 import time
 from statistics import mean
 import numpy as np
@@ -39,7 +40,7 @@ def e2e(args):
         models = []
         train_index, val_index = next(ss.split(data.graphs))
 
-        for cvs in cv_indices[:1]:
+        for cvs in cv_indices:
 
             train_index, val_index = cvs
 
@@ -156,7 +157,8 @@ def e2e(args):
                 writer.add_image('train_images', train_grid, im_step)
                 val_grid = torchvision.utils.make_grid(val_imgs)
                 writer.add_image('val_images', val_grid, im_step)
-    
+
+            break
     else:
         ################* SKIP TRAINING ################
         print("\n### SKIP TRAINING ###")
