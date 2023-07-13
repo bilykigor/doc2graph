@@ -165,7 +165,7 @@ class E2E(nn.Module):
         # self.m_layers = m_layers
         # for l in range(m_layers):
         #     self.message_passing.append(GcnSAGELayer(m_hidden, m_hidden, F.relu, 0.))
-        self.message_passing = GcnSAGELayer(m_hidden, m_hidden, F.relu, 0.)
+        self.message_passing = GcnSAGELayer(m_hidden, m_hidden, F.relu, dropout)
 
         # Define edge predictor layer
         self.edge_pred = MLPPredictor_E2E(m_hidden, hidden_dim, edge_classes, dropout,  edge_pred_features)
@@ -173,6 +173,7 @@ class E2E(nn.Module):
         # Define node predictor layer
         node_pred = []
         node_pred.append(nn.Linear(m_hidden, node_classes))
+        node_pred.append(nn.Dropout(p=dropout))
         node_pred.append(nn.LayerNorm(node_classes))
         self.node_pred = nn.Sequential(*node_pred)
 
