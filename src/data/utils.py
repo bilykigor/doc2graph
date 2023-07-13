@@ -5,7 +5,8 @@ import numpy as np
 import torch
 import math
 
-def polar(rect_src : list, rect_dst : list) -> Tuple[int, int]:
+
+def polar(rect_src : list, rect_dst : list):
     """Compute distance and angle from src to dst bounding boxes (poolar coordinates considering the src as the center)
     Args:
         rect_src (list) : source rectangle coordinates
@@ -15,14 +16,17 @@ def polar(rect_src : list, rect_dst : list) -> Tuple[int, int]:
         tuple (ints): distance and angle
     """
     
-    # check relative position
-    left = (rect_dst[2] - rect_src[0]) <= 0
-    bottom = (rect_src[3] - rect_dst[1]) <= 0
-    right = (rect_src[2] - rect_dst[0]) <= 0
-    top = (rect_dst[3] - rect_src[1]) <= 0
+    x0_src, y0_src, x1_src, y1_src = rect_src
+    x0_dst, y0_dst, x1_dst, y1_dst = rect_dst
     
-    vp_intersect = (rect_src[0] <= rect_dst[2] and rect_dst[0] <= rect_src[2]) # True if two rects "see" each other vertically, above or under
-    hp_intersect = (rect_src[1] <= rect_dst[3] and rect_dst[1] <= rect_src[3]) # True if two rects "see" each other horizontally, right or left
+    # check relative position
+    left = (x1_dst - x0_src) <= 0
+    bottom = (y1_src - y0_dst) <= 0
+    right = (x1_src - x0_dst) <= 0
+    top = (y1_dst - y0_src) <= 0
+    
+    vp_intersect = (x0_src <= x1_dst and x0_dst <= x1_src) # True if two rects "see" each other vertically, above or under
+    hp_intersect = (y0_src <= y1_dst and y0_dst <= y1_src) # True if two rects "see" each other horizontally, right or left
     rect_intersect = vp_intersect and hp_intersect 
 
     center = lambda rect: ((rect[2]+rect[0])/2, (rect[3]+rect[1])/2)
@@ -36,27 +40,52 @@ def polar(rect_src : list, rect_dst : list) -> Tuple[int, int]:
     if rect_intersect:
         return 0, angle
     elif top and left:
-        a, b = (rect_dst[2] - rect_src[0]), (rect_dst[3] - rect_src[1])
+        a, b = (x1_dst - x0_src), (y1_dst - y0_src)
         return int(sqrt(a**2 + b**2)), angle
     elif left and bottom:
-        a, b = (rect_dst[2] - rect_src[0]), (rect_dst[1] - rect_src[3])
+        a, b = (x1_dst - x0_src), (y0_dst - y1_src)
         return int(sqrt(a**2 + b**2)), angle
     elif bottom and right:
-        a, b = (rect_dst[0] - rect_src[2]), (rect_dst[1] - rect_src[3])
+        a, b = (x0_dst - x1_src), (y0_dst - y1_src)
         return int(sqrt(a**2 + b**2)), angle
     elif right and top:
-        a, b = (rect_dst[0] - rect_src[2]), (rect_dst[3] - rect_src[1])
+        a, b = (x0_dst - x1_src), (y1_dst - y0_src)
         return int(sqrt(a**2 + b**2)), angle
     elif left:
-        return (rect_src[0] - rect_dst[2]), angle
+        return (x0_src - x1_dst), angle
     elif right:
-        return (rect_dst[0] - rect_src[2]), angle
+        return (x0_dst - x1_src), angle
     elif bottom:
-        return (rect_dst[1] - rect_src[3]), angle
+        return (y0_dst - y1_src), angle
     elif top:
-        return (rect_src[1] - rect_dst[3]), angle
+        return (y0_src - y1_dst), angle
+       
+def polar2(rect_src : list, rect_dst : list):
+    """Compute distance and angle from src to dst bounding boxes (poolar coordinates considering the src as the center)
+    Args:
+        rect_src (list) : source rectangle coordinates
+        rect_dst (list) : destination rectangle coordinates
+    
+    Returns:
+        tuple (ints): distance and angle
+    """
+    
+    x0_src, y0_src, x1_src, y1_src = rect_src
+    x0_dst, y0_dst, x1_dst, y1_dst = rect_dst
+    
+    a1, b1 = (x0_dst - x0_src), (y0_dst - y0_src)
+    d1 = sqrt(a1**2 + b1**2)
+    sin1  = b1/d1
+    cos1  = a1/d1
+    
+    a2, b2 = (x1_dst - x1_src), (y1_dst - y1_src)
+    d2 = sqrt(a2**2 + b2**2)
+    sin2  = b2/d2
+    cos2  = a2/d2
 
-def transform_image(img_path : str, scale_image=1.0) -> torch.Tensor:
+    return d1, sin1, cos1, d2, sin2, cos2  
+
+def transform_image(img_path : str, scale_image=1.0):
     """ Transform image to torch.Tensor
 
     Args:
@@ -77,7 +106,7 @@ def transform_image(img_path : str, scale_image=1.0) -> torch.Tensor:
     
     return img
 
-def get_histogram(contents : list) -> list:
+def get_histogram(contents : list):
     """Create histogram of content given a text.
 
     Args;
@@ -128,7 +157,7 @@ def get_histogram(contents : list) -> list:
         
     return c_histograms
 
-def to_bin(dist :int, angle : int, b=8) -> torch.Tensor:
+def to_bin(dist :int, angle : int, b=8):
     """ Discretize the space into equal "bins": return a distance and angle into a number between 0 and 1.
 
     Args:
@@ -166,3 +195,12 @@ def to_bin(dist :int, angle : int, b=8) -> torch.Tensor:
 
     return torch.cat([torch.tensor(new_dist, dtype=torch.float32), torch.tensor(new_angle, dtype=torch.float32)], dim=1)
 
+
+def to_bin2(d1,s1,c1,d2,s2,c2):
+    return torch.cat([torch.tensor(d1, dtype=torch.float32), 
+                      torch.tensor(s1, dtype=torch.float32),
+                      torch.tensor(c1, dtype=torch.float32),
+                      torch.tensor(d2, dtype=torch.float32),
+                      torch.tensor(s2, dtype=torch.float32),
+                      torch.tensor(c2, dtype=torch.float32)
+                      ], dim=1)
