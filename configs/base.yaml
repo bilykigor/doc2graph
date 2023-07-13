@@ -3,7 +3,8 @@
 
 LOADER:
   src_data:
-    - FUNSD
+    - REMITTANCE
+    # - FUNSD
     # - PAU
     # - CUSTOM
 FEATURES:

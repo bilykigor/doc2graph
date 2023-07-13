@@ -77,8 +77,8 @@ def e2e(args):
                 model.train()
                 
                 n_scores, e_scores = model(tg, tg.ndata['feat'].to(device))
-                n_loss = compute_crossentropy_loss(n_scores.to(device), tg.ndata['label'].to(device))
-                e_loss = compute_crossentropy_loss(e_scores.to(device), tg.edata['label'].to(device))
+                n_loss = compute_crossentropy_loss(n_scores.to(device), tg.ndata['label'].to(device),device)
+                e_loss = compute_crossentropy_loss(e_scores.to(device), tg.edata['label'].to(device),device)
                 tot_loss = n_loss + e_loss
                 macro, micro = get_f1(n_scores, tg.ndata['label'].to(device))
                 auc = compute_auc_mc(e_scores.to(device), tg.edata['label'].to(device))
@@ -93,8 +93,8 @@ def e2e(args):
                 model.eval()
                 with torch.no_grad():
                     val_n_scores, val_e_scores = model(vg, vg.ndata['feat'].to(device))
-                    val_n_loss = compute_crossentropy_loss(val_n_scores.to(device), vg.ndata['label'].to(device))
-                    val_e_loss = compute_crossentropy_loss(val_e_scores.to(device), vg.edata['label'].to(device))
+                    val_n_loss = compute_crossentropy_loss(val_n_scores.to(device), vg.ndata['label'].to(device),device)
+                    val_e_loss = compute_crossentropy_loss(val_e_scores.to(device), vg.edata['label'].to(device),device)
                     val_tot_loss = val_n_loss + val_e_loss
                     val_macro, _ = get_f1(val_n_scores, vg.ndata['label'].to(device))
                     val_auc = compute_auc_mc(val_e_scores.to(device), vg.edata['label'].to(device))
@@ -329,7 +329,7 @@ def entity_linking(args):
                 model.train()
                 
                 scores = model(tg, tg.ndata['feat'].to(device))
-                loss = compute_crossentropy_loss(scores.to(device), tg.edata['label'].to(device))
+                loss = compute_crossentropy_loss(scores.to(device), tg.edata['label'].to(device),device)
                 auc = compute_auc_mc(scores.to(device), tg.edata['label'].to(device))
                 
                 l2_lambda = 0.001
@@ -346,7 +346,7 @@ def entity_linking(args):
                 with torch.no_grad():
                     val_scores = model(vg, vg.ndata['feat'].to(device))
                     val_loss = compute_crossentropy_loss(val_scores.to(device), vg.edata['label'].to(device))
-                    val_auc = compute_auc_mc(val_scores.to(device), vg.edata['label'].to(device))
+                    val_auc = compute_auc_mc(val_scores.to(device), vg.edata['label'].to(device),device)
                 
                 # scheduler.step(val_auc)
                 # scheduler.step()

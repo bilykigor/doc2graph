@@ -34,6 +34,8 @@ class Document2Graph(data.Dataset):
         self.GB = GraphBuilder()
         self.FB = FeatureBuilder(device)
         self.output_dir = output_dir
+        
+        os.makedirs(output_dir, exist_ok=True)
 
         # TODO: DO A DIFFERENT FILE
         self.COLORS = {'invoice_info': (150, 75, 0), 'receiver':(0,100,0), 'other':(128, 128, 128), 'supplier': (255, 0, 255), 'positions':(255,140,0), 'total':(0, 255, 255)}
@@ -64,7 +66,7 @@ class Document2Graph(data.Dataset):
             for idx, labels in enumerate(self.edge_labels):
                 self.graphs[idx].edata['label'] = torch.tensor([np.where(target == self.edge_unique_labels)[0][0] for target in labels], dtype=torch.int64)
 
-    def __getitem__(self, index: int) -> dgl.DGLGraph:
+    def __getitem__(self, index: int):
         """ Returns item (graph), given index
 
         Args:
@@ -72,12 +74,12 @@ class Document2Graph(data.Dataset):
         """
         return self.graphs[index]
     
-    def __len__(self) -> int:
+    def __len__(self):
         """ Returns data length
         """
         return len(self.graphs)
     
-    def __docs2graphs(self) -> Tuple[list, list, list, list]:
+    def __docs2graphs(self):
         """It uses GraphBuilder and FeaturesBuilder objects to get graphs (and lables, if any) from source data.
 
         Returns:
@@ -87,7 +89,7 @@ class Document2Graph(data.Dataset):
         self.feature_chunks, self.num_mods = self.FB.add_features(graphs, features)
         return graphs, node_labels, edge_labels, features['paths']
     
-    def label2class(self, label : str, node=True) -> int:
+    def label2class(self, label : str, node=True):
         """ Transform a label (str) into its class number.
 
         Args:
@@ -102,7 +104,7 @@ class Document2Graph(data.Dataset):
         else:
             return self.edge_unique_labels[label]
     
-    def get_info(self, num_graph=0) -> None:
+    def get_info(self, num_graph=0):
         """ Print information regarding the data uploaded
 
         Args:
@@ -114,7 +116,7 @@ class Document2Graph(data.Dataset):
         print(f"-> graph example: {self.graphs[num_graph]}")
         return
     
-    def balance(self, cls = 'none', indices = None) -> None:
+    def balance(self, cls = 'none', indices = None):
         """ Calls balance_edges() of GraphBuilder.
 
         Args:
@@ -131,7 +133,7 @@ class Document2Graph(data.Dataset):
         
         return
     
-    def get_chunks(self) -> list:
+    def get_chunks(self):
         """ get feature_chunks, meaning the length of different modalities (features) contributions inside nodes.
 
         Returns:
@@ -140,7 +142,7 @@ class Document2Graph(data.Dataset):
         if len(self.feature_chunks) != self.num_mods: self.feature_chunks.pop(0)
         return self.feature_chunks
     
-    def print_graph(self, num=None, node_labels=None, labels_ids=None, name='doc_graph', bidirect=True, regions=[], preds=None) -> Image:
+    def print_graph(self, num=None, node_labels=None, labels_ids=None, name='doc_graph', bidirect=True, regions=[], preds=None):
         """ Print a given graph over its image document.
 
         Args:

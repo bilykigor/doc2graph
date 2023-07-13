@@ -26,7 +26,7 @@ class GraphBuilder():
         random.seed = 42
         return
     
-    def get_graph(self, src_path : str, src_data : str) -> Tuple[list, list, list, list]:
+    def get_graph(self, src_path : str, src_data : str):
         """ Given the source, it returns a graph
 
         Args:
@@ -39,6 +39,8 @@ class GraphBuilder():
         
         if src_data == 'FUNSD':
             return self.__fromFUNSD(src_path)
+        if src_data == 'REMITTANCE':
+            return self.__fromREMITTANCE(src_path)
         elif src_data == 'PAU':
             return self.__fromPAU(src_path)
         elif src_data == 'CUSTOM':
@@ -51,7 +53,7 @@ class GraphBuilder():
         else:
             raise Exception('GraphBuilder exception: source data invalid. Choose from ["FUNSD", "PAU", "CUSTOM"]')
     
-    def balance_edges(self, g : dgl.DGLGraph, cls=None ) -> dgl.DGLGraph:
+    def balance_edges(self, g : dgl.DGLGraph, cls=None ):
         """ if cls (class) is not None, but an integer instead, balance that class to be equal to the sum of the other classes
 
         Args:
@@ -91,7 +93,7 @@ class GraphBuilder():
         """
         print(f"-> edge type: {self.edge_type}")
 
-    def fully_connected(self, ids : list) -> Tuple[list, list]:
+    def fully_connected(self, ids : list):
         """ create fully connected graph
 
         Args:
@@ -106,7 +108,7 @@ class GraphBuilder():
             v.extend([i for i in range(len(ids)) if i != id])
         return u, v
     
-    def knn_connection(self, size : tuple, bboxs : list, k = 10) -> Tuple[list, list]:
+    def knn_connection(self, size : tuple, bboxs : list, k = 10):
         """ Given a list of bounding boxes, find for each of them their k nearest ones.
 
         Args:
@@ -222,7 +224,7 @@ class GraphBuilder():
         #TODO: dev from PDF import of graphs
         return
 
-    def __fromPAU(self, src: str) -> Tuple[list, list, list, list]:
+    def __fromPAU(self, src: str):
         """ build graphs from Pau Riba's dataset
 
         Args:
@@ -311,7 +313,7 @@ class GraphBuilder():
         
         return graphs, node_labels, edge_labels, features
 
-    def __fromFUNSD(self, src : str) -> Tuple[list, list, list, list]:
+    def __fromFUNSD(self, src : str):
         """Parsing FUNSD annotation files
 
         Args:
@@ -365,6 +367,155 @@ class GraphBuilder():
                 for e in zip(u, v):
                     edge = [e[0], e[1]]
                     if edge in pair_labels: el.append('pair')
+                    else: el.append('none')
+                edge_labels.append(el)
+
+                # creating graph
+                g = dgl.graph((torch.tensor(u), torch.tensor(v)), num_nodes=len(boxs), idtype=torch.int32)
+                graphs.append(g)
+
+            #! DEBUG PURPOSES TO VISUALIZE RANDOM GRAPH IMAGE FROM DATASET
+            if False:
+                if justOne == file.split(".")[0]:
+                    print("\n\n### EXAMPLE ###")
+                    print("Savin example:", img_name)
+
+                    edge_unique_labels = np.unique(el)
+                    g.edata['label'] = torch.tensor([np.where(target == edge_unique_labels)[0][0] for target in el])
+
+                    g = self.balance_edges(g, 3, int(np.where('none' == edge_unique_labels)[0][0]))
+
+                    img_removed = Image.open(img_path).convert('RGB')
+                    draw_removed = ImageDraw.Draw(img_removed)
+
+                    for b, box in enumerate(boxs):
+                        if nl[b] == 'header':
+                            color = 'yellow'
+                        elif nl[b] == 'question':
+                            color = 'blue'
+                        elif nl[b] == 'answer':
+                            color = 'green'
+                        else:
+                            color = 'gray'
+                        draw_removed.rectangle(box, outline=color, width=3)
+
+                    u, v = g.all_edges()
+                    labels = g.edata['label'].tolist()
+                    u, v = u.tolist(), v.tolist()
+
+                    center = lambda rect: ((rect[2]+rect[0])/2, (rect[3]+rect[1])/2)
+
+                    num_pair = 0
+                    num_none = 0
+
+                    for p, pair in enumerate(zip(u,v)):
+                        sc = center(boxs[pair[0]])
+                        ec = center(boxs[pair[1]])
+                        if labels[p] == int(np.where('pair' == edge_unique_labels)[0][0]): 
+                            num_pair += 1
+                            color = 'violet'
+                            draw_removed.ellipse([(sc[0]-4,sc[1]-4), (sc[0]+4,sc[1]+4)], fill = 'green', outline='black')
+                            draw_removed.ellipse([(ec[0]-4,ec[1]-4), (ec[0]+4,ec[1]+4)], fill = 'red', outline='black')
+                        else: 
+                            num_none += 1
+                            color='gray'
+                        draw_removed.line((sc,ec), fill=color, width=3)
+                    
+                    print("Balanced Links: None {} | Key-Value {}".format(num_none, num_pair))
+                    img_removed.save(f'esempi/FUNSD/{img_name}_removed_graph.png')
+
+        elif self.node_granularity == 'yolo':
+            path_preds = os.path.join(src, 'yolo_bbox')
+            path_images = os.path.join(src, 'images')
+            path_gts = os.path.join(src, 'adjusted_annotations')
+            all_paths, all_preds, all_links, all_labels, all_texts = load_predictions(path_preds, path_gts, path_images)
+            for f, img_path in enumerate(tqdm(all_paths, desc='Creating graphs - YOLO')):
+            
+                features['paths'].append(img_path)
+                features['boxs'].append(all_preds[f])
+                features['texts'].append(all_texts[f])
+                node_labels.append(all_labels[f])
+                pair_labels = all_links[f]
+
+                # getting edges
+                if self.edge_type == 'fully':
+                    u, v = self.fully_connected(range(len(features['boxs'][f])))
+                elif self.edge_type == 'knn': 
+                    u,v = self.knn_connection(Image.open(img_path).size, features['boxs'][f])
+                else:
+                    raise Exception('GraphBuilder exception: Other edge types still under development.')
+                
+                el = list()
+                for e in zip(u, v):
+                    edge = [e[0], e[1]]
+                    if edge in pair_labels: el.append('pair')
+                    else: el.append('none')
+                edge_labels.append(el)
+
+                # creating graph
+                g = dgl.graph((torch.tensor(u), torch.tensor(v)), num_nodes=len(features['boxs'][f]), idtype=torch.int32)
+                graphs.append(g)
+        else:
+            #TODO develop OCR too
+            raise Exception('GraphBuilder Exception: only \'gt\' or \'yolo\' available for FUNSD.')
+
+
+        return graphs, node_labels, edge_labels, features
+    
+    def __fromREMITTANCE(self, src : str):
+        """Parsing FUNSD annotation files
+
+        Args:
+            src (str) : path to where data is stored
+        
+        Returns:
+            tuple (lists) : graphs, nodes and edge labels, features
+        """
+
+        graphs, node_labels, edge_labels = list(), list(), list()
+        features = {'paths': [], 'texts': [], 'boxs': []}
+        # justOne = random.choice(os.listdir(os.path.join(src, 'adjusted_annotations'))).split(".")[0]
+        
+        if self.node_granularity == 'gt':
+            for file in tqdm(os.listdir(os.path.join(src, 'layoutlm_annotations')), desc='Creating graphs - GT'):
+            
+                img_name = f'{file.split(".")[0]}.jpg'
+                img_path = os.path.join(src, 'images', img_name)
+                features['paths'].append(img_path)
+
+                with open(os.path.join(src, 'layoutlm_annotations', file), 'r') as f:
+                    form = json.load(f)
+
+                # getting infos
+                boxs, texts, ids, nl = list(), list(), list(), list()
+                pair_labels = list()
+
+                for id, elem in enumerate(form):
+                    boxs.append(elem['box'])
+                    texts.append(elem['text'])
+                    nl.append(elem['label'])
+                    ids.append(id)
+                    #[pair_labels.append(pair) for pair in elem['linking']]
+                
+                # for p, pair in enumerate(pair_labels):
+                #     pair_labels[p] = [ids.index(pair[0]), ids.index(pair[1])]
+                
+                node_labels.append(nl)
+                features['texts'].append(texts)
+                features['boxs'].append(boxs)
+                
+                # getting edges
+                if self.edge_type == 'fully':
+                    u, v = self.fully_connected(range(len(boxs)))
+                elif self.edge_type == 'knn': 
+                    u,v = self.knn_connection(Image.open(img_path).size, boxs)
+                else:
+                    raise Exception('GraphBuilder exception: Other edge types still under development.')
+                
+                el = list()
+                for e in zip(u, v):
+                    edge = [e[0], e[1]]
+                    if False: el.append('pair') #edge in pair_labels:
                     else: el.append('none')
                 edge_labels.append(el)
 

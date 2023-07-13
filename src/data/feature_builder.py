@@ -36,7 +36,7 @@ class FeatureBuilder():
 
         if self.add_visual:
             self.visual_embedder = Unet(encoder_name="mobilenet_v2", encoder_weights=None, in_channels=1, classes=4)
-            self.visual_embedder.load_state_dict(torch.load(CHECKPOINTS / 'backbone_unet.pth')['weights'])
+            self.visual_embedder.load_state_dict(torch.load(CHECKPOINTS / 'backbone_unet.pth', map_location=torch.device(d))['weights'])
             self.visual_embedder = self.visual_embedder.encoder
             self.visual_embedder.to(d)
         
@@ -84,7 +84,7 @@ class FeatureBuilder():
             # visual features
             # https://pytorch.org/vision/stable/generated/torchvision.ops.roi_align.html?highlight=roi
             if self.add_visual:
-                img = Image.open(features['paths'][id])
+                img = Image.open(features['paths'][id]).convert('L')
                 visual_emb = self.visual_embedder(tvF.to_tensor(img).unsqueeze_(0).to(self.device)) # output [batch, channels, dim1, dim2]
                 bboxs = [torch.Tensor(b) for b in features['boxs'][id]]
                 bboxs = [torch.stack(bboxs, dim=0).to(self.device)]

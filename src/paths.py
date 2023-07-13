@@ -29,3 +29,8 @@ FUNSD_TEST = DATA / 'FUNSD' / 'testing_data'
 # PAU
 PAU_TRAIN = DATA / 'PAU' / 'train'
 PAU_TEST = DATA / 'PAU' / 'test'
+
+# REMITTANCE
+REMITTANCE_TRAIN = DATA / 'REMITTANCE' / 'train'
+REMITTANCE_TEST = DATA / 'REMITTANCE' / 'test'
+REMITTANCE_VAL = DATA / 'REMITTANCE' / 'validation'

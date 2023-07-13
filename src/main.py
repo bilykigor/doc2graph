@@ -3,6 +3,7 @@ import argparse
 from src.data.download import get_data
 from src.inference import inference
 from src.training.funsd import train_funsd
+from src.training.remittance import train_remittance
 from src.utils import create_folder, project_tree, set_preprocessing
 from src.training.pau import train_pau
 
@@ -70,6 +71,10 @@ def main():
             if args.test and args.weights == None:
                 raise Exception("Main exception: Provide a weights file relative path! Or train a model first.")
             train_funsd(args)
+        elif args.src_data == 'REMITTANCE':
+            if args.test and args.weights == None:
+                raise Exception("Main exception: Provide a weights file relative path! Or train a model first.")
+            train_remittance(args)
         elif args.src_data == 'PAU':
             train_pau(args)
         elif args.src_data == 'CUSTOM':
