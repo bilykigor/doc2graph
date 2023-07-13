@@ -42,7 +42,7 @@ class EarlyStopping:
         if name == '': self.name = f'{e.strftime("%Y%m%d-%H%M")}'
         else: self.name = name
 
-    def step(self, score : float) -> str:
+    def step(self, score : float):
         """ It does a step of the stopper. If metric does not encrease after a while, it stops the training.
 
         Args:
@@ -56,8 +56,8 @@ class EarlyStopping:
             self.best_score = score
             self.save_checkpoint()
             return 'improved'
-
-        if self.metric == 'loss':
+        
+        if self.metric in ['loss','loss_diff']:
             if score > self.best_score:
                 self.counter += 1
                 print(f'    !- Stop Counter {self.counter} / {self.patience}')
