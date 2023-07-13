@@ -39,7 +39,7 @@ def e2e(args):
         models = []
         train_index, val_index = next(ss.split(data.graphs))
 
-        for cvs in cv_indices:
+        for cvs in cv_indices[:1]:
 
             train_index, val_index = cvs
 
@@ -60,9 +60,9 @@ def e2e(args):
             e = datetime.now()
             train_name = args.model + f'-{e.strftime("%Y%m%d-%H%M")}'
             models.append(train_name+'.pt')
-            stopper = EarlyStopping(model, name=train_name, metric=cfg_train.stopper_metric, patience=2000)
-            # writer = SummaryWriter(log_dir=RUNS)
-            # convert_imgs = transforms.ToTensor()
+            stopper = EarlyStopping(model, name=train_name, metric=cfg_train.stopper_metric, patience=20)
+            writer = SummaryWriter(log_dir=RUNS)
+            #convert_imgs = transforms.ToTensor()
         
             ################* STEP 2: TRAINING ################
             print("\n### TRAINING ###")
@@ -148,14 +148,14 @@ def e2e(args):
                 if ss == 'stop':
                     break
 
-                # writer.add_scalars('AUC-PR', {'train': auc, 'val': val_auc}, epoch)
-                # writer.add_scalars('LOSS', {'train': tot_loss.item(), 'val': val_tot_loss.item()}, epoch)
-                # writer.add_scalar('LR', optimizer.param_groups[0]['lr'], epoch)
+                writer.add_scalars('AUC-PR', {'train': auc, 'val': val_auc}, epoch)
+                writer.add_scalars('LOSS', {'train': tot_loss.item(), 'val': val_tot_loss.item()}, epoch)
+                writer.add_scalar('LR', optimizer.param_groups[0]['lr'], epoch)
 
-                # train_grid = torchvision.utils.make_grid(train_imgs)
-                # writer.add_image('train_images', train_grid, im_step)
-                # val_grid = torchvision.utils.make_grid(val_imgs)
-                # writer.add_image('val_images', val_grid, im_step)
+                train_grid = torchvision.utils.make_grid(train_imgs)
+                writer.add_image('train_images', train_grid, im_step)
+                val_grid = torchvision.utils.make_grid(val_imgs)
+                writer.add_image('val_images', val_grid, im_step)
     
     else:
         ################* SKIP TRAINING ################
