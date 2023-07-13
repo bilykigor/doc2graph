@@ -478,7 +478,7 @@ class GraphBuilder():
         
         if self.node_granularity == 'gt':
             files = os.listdir(os.path.join(src, 'layoutlm_annotations'))
-            for file in tqdm(files[:100], desc='Creating graphs - GT'):
+            for file in tqdm(files, desc='Creating graphs - GT'):
             
                 img_name = f'{file.split(".")[0]}.jpg'
                 img_path = os.path.join(src, 'images', img_name)
