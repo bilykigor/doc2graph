@@ -6,6 +6,6 @@ val_size : 0.1
 optimizer: Adam # or AdamW, SGD - NOT YET IMPLEMENTED
 scheduler:
   - ReduceLROnPlateau # CosineAnnealingLR, None- NOT YET IMPLEMENTED
-stopper_metric: loss_diff #acc # loss or acc
+stopper_metric: loss #acc # loss or acc
 seed: 42
 verbose: 0

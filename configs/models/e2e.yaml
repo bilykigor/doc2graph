@@ -1,6 +1,6 @@
 name: E2E
 dropout: 0.2
-hidden_dim: 100
-out_chunks: 100
+hidden_dim: 10
+out_chunks: 10
 num_layers: 1
 doProject: True
