@@ -121,6 +121,9 @@ class FeatureBuilder():
                 
                 distances = [d1+d2 for d1,d2 in zip(distances1,distances2)]
                 m = max(distances)
+                
+                distances1 = [d/m for d in distances1]
+                distances2 = [d/m for d in distances2]
                 polar_coordinates = to_bin2(distances1,sin1,cos1,distances2,sin2,cos2)
                 g.edata['feat'] = polar_coordinates
 
