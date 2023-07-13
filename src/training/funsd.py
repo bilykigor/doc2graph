@@ -104,8 +104,13 @@ def e2e(args):
 
                 #* PRINTING IMAGEs AND RESULTS
 
-                print("Epoch {:05d} | TrainLoss {:.4f} | TrainF1-MACRO {:.4f} | TrainAUC-PR {:.4f} | ValLoss {:.4f} | ValF1-MACRO {:.4f} | ValAUC-PR {:.4f} |"
-                .format(epoch, tot_loss.item(), macro, auc, val_tot_loss.item(), val_macro, val_auc))
+                if cfg_train.verbose:
+                    print("Epoch {:05d} | TrainLoss {:.4f} | TrainF1-MACRO {:.4f} | TrainAUC-PR {:.4f} | ValLoss {:.4f} | ValF1-MACRO {:.4f} | ValAUC-PR {:.4f} |"
+                    .format(epoch, tot_loss.item(), macro, auc, val_tot_loss.item(), val_macro, val_auc))
+                    
+                writer.add_scalars('AUC-PR', {'train': auc, 'val': val_auc}, epoch)
+                writer.add_scalars('LOSS', {'train': tot_loss.item(), 'val': val_tot_loss.item()}, epoch)
+                writer.add_scalar('LR', optimizer.param_groups[0]['lr'], epoch)
                 
                 if cfg_train.stopper_metric == 'loss':
                     step_value = val_tot_loss.item()
@@ -148,10 +153,6 @@ def e2e(args):
 
                 if ss == 'stop':
                     break
-
-                writer.add_scalars('AUC-PR', {'train': auc, 'val': val_auc}, epoch)
-                writer.add_scalars('LOSS', {'train': tot_loss.item(), 'val': val_tot_loss.item()}, epoch)
-                writer.add_scalar('LR', optimizer.param_groups[0]['lr'], epoch)
 
                 # train_grid = torchvision.utils.make_grid(train_imgs)
                 # writer.add_image('train_images', train_grid, im_step)
@@ -310,7 +311,7 @@ def entity_linking(args):
             train_name = args.model + f'-{e.strftime("%Y%m%d-%H%M")}'
             models.append(train_name+'.pt')
             stopper = EarlyStopping(model, name=train_name, metric=cfg_train.stopper_metric, patience=1000)
-            # writer = SummaryWriter(log_dir=RUNS)
+            writer = SummaryWriter(log_dir=RUNS)
             # convert_imgs = transforms.ToTensor()
         
             ################* STEP 2: TRAINING ################
@@ -345,8 +346,13 @@ def entity_linking(args):
 
                 #* PRINTING IMAGEs AND RESULTS
 
-                print("Epoch {:05d} | TrainLoss {:.4f} | TrainAUC-PR {:.4f} | ValLoss {:.4f} | ValAUC-PR {:.4f} |"
-                .format(epoch, loss.item(), auc, val_loss.item(), val_auc))
+                if cfg_train.verbose:
+                    print("Epoch {:05d} | TrainLoss {:.4f} | TrainAUC-PR {:.4f} | ValLoss {:.4f} | ValAUC-PR {:.4f} |"
+                    .format(epoch, loss.item(), auc, val_loss.item(), val_auc))
+                    
+                writer.add_scalars('AUC-PR', {'train': auc, 'val': val_auc}, epoch)
+                writer.add_scalars('LOSS', {'train': loss.item(), 'val': val_loss.item()}, epoch)
+                writer.add_scalar('LR', optimizer.param_groups[0]['lr'], epoch)
                 
                 if cfg_train.stopper_metric == 'loss':
                     step_value = val_loss.item()
@@ -385,10 +391,6 @@ def entity_linking(args):
 
                 if ss == 'stop':
                     break
-
-                # writer.add_scalars('AUC-PR', {'train': auc, 'val': val_auc}, epoch)
-                # writer.add_scalars('LOSS', {'train': loss.item(), 'val': val_loss.item()}, epoch)
-                # writer.add_scalar('LR', optimizer.param_groups[0]['lr'], epoch)
 
                 # train_grid = torchvision.utils.make_grid(train_imgs)
                 # writer.add_image('train_images', train_grid, im_step)

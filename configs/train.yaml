@@ -8,3 +8,4 @@ scheduler:
   - ReduceLROnPlateau # CosineAnnealingLR, None- NOT YET IMPLEMENTED
 stopper_metric: acc # loss or acc
 seed: 42
+verbose: 0
