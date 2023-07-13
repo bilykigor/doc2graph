@@ -110,6 +110,7 @@ def e2e(args):
                     
                 writer.add_scalars('AUC-PR', {'train': auc, 'val': val_auc}, epoch)
                 writer.add_scalars('LOSS', {'train': tot_loss.item(), 'val': val_tot_loss.item()}, epoch)
+                writer.add_scalars('LOSS_DIFF', {'value': val_tot_loss.item() - tot_loss.item()}, epoch)
                 writer.add_scalar('LR', optimizer.param_groups[0]['lr'], epoch)
                 
                 if cfg_train.stopper_metric == 'loss_diff':
