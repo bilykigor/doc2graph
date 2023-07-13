@@ -32,9 +32,9 @@ def e2e(args):
 
     if not args.test:
         ################* STEP 0: LOAD DATA ################
-        data = Document2Graph(name='REMITTANCE TRAIN', src_path=REMITTANCE_TEST, device = device, output_dir=TRAIN_SAMPLES)
+        data = Document2Graph(name='REMITTANCE TRAIN', src_path=REMITTANCE_TRAIN, device = device, output_dir=TRAIN_SAMPLES)
         data.get_info()
-        val_data = Document2Graph(name='REMITTANCE VALIDATION', src_path=REMITTANCE_TEST, device = device, output_dir=TEST_SAMPLES)
+        val_data = Document2Graph(name='REMITTANCE VALIDATION', src_path=REMITTANCE_VAL, device = device, output_dir=TEST_SAMPLES)
         val_data.get_info()
         ################* STEP 1: CREATE MODEL ################
         model = sm.get_model(data.node_num_classes, data.edge_num_classes, data.get_chunks())
@@ -175,7 +175,7 @@ def e2e(args):
     model = sm.get_model(test_data.node_num_classes, test_data.edge_num_classes, test_data.get_chunks())
     best_model = ''
     nodes_micro = []
-    edges_f1 = []
+    #edges_f1 = []
     test_graph = dgl.batch(test_data.graphs).to(device)
 
     m = train_name+'.pt'
@@ -188,8 +188,8 @@ def e2e(args):
         _, preds = torch.max(F.softmax(e, dim=1), dim=1)
 
         accuracy, f1 = get_binary_accuracy_and_f1(preds, test_graph.edata['label'])
-        _, classes_f1 = get_binary_accuracy_and_f1(preds, test_graph.edata['label'], per_class=True)
-        edges_f1.append(classes_f1[1])
+        #_, classes_f1 = get_binary_accuracy_and_f1(preds, test_graph.edata['label'], per_class=True)
+        #edges_f1.append(classes_f1[1])
 
         macro, micro = get_f1(n, test_graph.ndata['label'].to(device))
         nodes_micro.append(micro)
@@ -230,7 +230,7 @@ def e2e(args):
 
     print("\n### AVG RESULTS ###")
     print("Semantic Entity Labeling: MEAN ", mean(nodes_micro), " STD: ", np.std(nodes_micro))
-    print("Entity Linking: MEAN ", mean(edges_f1),"STD", np.std(edges_f1))
+    #print("Entity Linking: MEAN ", mean(edges_f1),"STD", np.std(edges_f1))
 
     if not args.test:
         feat_n, feat_e = get_features(args)
@@ -257,15 +257,15 @@ def e2e(args):
             'RESULTS': {
                 'val-loss': stopper.best_score, 
                 'f1-scores': f1,
-		        'f1-classes': classes_f1,
+		        # 'f1-classes': classes_f1,
                 'nodes-f1': [macro, micro],
-                'std-pairs': np.std(edges_f1),
-                'mean-pairs': mean(edges_f1)
+                # 'std-pairs': np.std(edges_f1),
+                # 'mean-pairs': mean(edges_f1)
             }}
         save_test_results(train_name, results)
     
         print("END TRAINING:", time.time() - start_training)
-    return {'LINKS [MAX, MEAN, STD]': [classes_f1[1], mean(edges_f1), np.std(edges_f1)], 'NODES [MAX, MEAN, STD]': [micro, mean(nodes_micro), np.std(nodes_micro)]}
+    return {}#{'LINKS [MAX, MEAN, STD]': [classes_f1[1], mean(edges_f1), np.std(edges_f1)], 'NODES [MAX, MEAN, STD]': [micro, mean(nodes_micro), np.std(nodes_micro)]}
 
 def train_remittance(args):
 
