@@ -34,10 +34,10 @@ def e2e(args):
         ################* STEP 0: LOAD DATA ################
         data = Document2Graph(name='REMITTANCE TRAIN', src_path=REMITTANCE_TRAIN, device = device, output_dir=TRAIN_SAMPLES)
         data.get_info()
-        train_loader = DataLoader(range(len(data)), sampler=RandomSampler(range(len(data))), batch_size=cfg_train.batch_size,num_workers=1)
+        train_loader = DataLoader(range(len(data)), sampler=RandomSampler(range(len(data))), batch_size=cfg_train.batch_size,num_workers=0)
         val_data = Document2Graph(name='REMITTANCE VALIDATION', src_path=REMITTANCE_VAL, device = device, output_dir=TEST_SAMPLES)
         val_data.get_info()
-        val_loader = DataLoader(range(len(val_data)), sampler=SequentialSampler(range(len(val_data))), batch_size=cfg_train.batch_size,num_workers=1)
+        val_loader = DataLoader(range(len(val_data)), sampler=SequentialSampler(range(len(val_data))), batch_size=cfg_train.batch_size,num_workers=0)
         ################* STEP 1: CREATE MODEL ################
         model = sm.get_model(data.node_num_classes, data.edge_num_classes, data.get_chunks())
         optimizer = torch.optim.AdamW(model.parameters(), lr=float(cfg_train.lr), weight_decay=float(cfg_train.weight_decay))
