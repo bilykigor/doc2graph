@@ -12,7 +12,7 @@ FEATURES:
   add_fudge: false
   add_geom: true
   add_hist: false
-  add_visual: true
+  add_visual: false
 GRAPHS:
   edge_type:
     - fully
