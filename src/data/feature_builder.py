@@ -3,6 +3,7 @@ from typing import Tuple
 import spacy
 import torch
 import torchvision
+from math import sqrt
 from tqdm import tqdm
 from PIL import Image, ImageDraw
 import torchvision.transforms.functional as tvF
@@ -59,14 +60,15 @@ class FeatureBuilder():
             # positional features
             size = Image.open(features['paths'][id]).size
             feats = [[] for _ in range(len(features['boxs'][id]))]
-            geom = [self.sg(box, size) for box in features['boxs'][id]]
+            #geom = [self.sg(box, size) for box in features['boxs'][id]]
             chunks = []
 
             # 'geometrical' features
             if self.add_geom:
                 
                 # TODO add 2d encoding like "LayoutLM*"
-                [feats[idx].extend(self.sg(box, size)) for idx, box in enumerate(features['boxs'][id])]
+                # [feats[idx].extend(self.sg(box, size)) for idx, box in enumerate(features['boxs'][id])]
+                [feats[idx].extend(normalize_box(box, size[0], size[1])) for idx, box in enumerate(features['boxs'][id])]
                 chunks.append(4)
             
             # HISTOGRAM OF TEXT
@@ -89,6 +91,7 @@ class FeatureBuilder():
                 width, height = img.size
                 img = img.resize((min(width,1000), min(1000,height)))
                 bboxs = [normalize_box(b, width, height) for b in features['boxs'][id]]
+                width, height = img.size
                 
                 input_tensor = tvF.to_tensor(img).unsqueeze_(0)
                 input_tensor = input_tensor.to(self.device)
@@ -97,7 +100,7 @@ class FeatureBuilder():
                 
                 bboxs = [torch.Tensor(b) for b in bboxs]
                 bboxs = [torch.stack(bboxs, dim=0).to(self.device)]
-                h = [torchvision.ops.roi_align(input=ve, boxes=bboxs, spatial_scale=1/ min(size[1] / ve.shape[2] , size[0] / ve.shape[3]), output_size=1) for ve in visual_emb[1:]]
+                h = [torchvision.ops.roi_align(input=ve, boxes=bboxs, spatial_scale=1/ min(height / ve.shape[2] , width / ve.shape[3]), output_size=1) for ve in visual_emb[1:]]
                 h = torch.cat(h, dim=1)
 
                 # VISUAL FEATURES (RESNET-IMAGENET)
@@ -116,7 +119,7 @@ class FeatureBuilder():
 
                 # TODO CHOOSE WHICH DISTANCE NORMALIZATION TO APPLY
                 #! with fully connected simply normalized with max distance between distances
-                # m = sqrt((size[0]*size[0] + size[1]*size[1]))
+                m = sqrt((size[0]*size[0] + size[1]*size[1]))
                 # parable = lambda x : (-x+1)**4
                 
                 for pair in zip(srcs, dsts):
@@ -128,8 +131,8 @@ class FeatureBuilder():
                     sin2.append(s2)
                     cos2.append(c2)
                 
-                distances = [d1+d2 for d1,d2 in zip(distances1,distances2)]
-                m = max(distances)
+                #distances = [d1+d2 for d1,d2 in zip(distances1,distances2)]
+                #m = max(distances)
                 
                 distances1 = [d/m for d in distances1]
                 distances2 = [d/m for d in distances2]
