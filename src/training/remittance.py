@@ -43,7 +43,7 @@ def e2e(args):
         model = sm.get_model(data.node_num_classes, data.edge_num_classes, data.get_chunks())
         optimizer = torch.optim.AdamW(model.parameters(), lr=float(cfg_train.lr), weight_decay=float(cfg_train.weight_decay))
         # scheduler = ReduceLROnPlateau(optimizer, 'max', patience=400, min_lr=1e-3, verbose=True, factor=0.01)
-        # scheduler = StepLR(optimizer, step_size=30, gamma=0.1)
+        scheduler = StepLR(optimizer, step_size=500, gamma=0.5)
         e = datetime.now()
         train_name = args.model + f'-{e.strftime("%Y%m%d-%H%M")}'
         stopper = EarlyStopping(model, name=train_name, metric=cfg_train.stopper_metric, patience=100)
@@ -159,6 +159,8 @@ def e2e(args):
 
             if ss == 'stop':
                 break
+            
+            scheduler.step()
 
     else:
         ################* SKIP TRAINING ################
@@ -194,6 +196,12 @@ def e2e(args):
         #edges_f1.append(classes_f1[1])
 
         macro, micro = get_f1(n, test_graph.ndata['label'].to(device))
+        try:
+            f1_per_class = get_f1(n, test_graph.ndata['label'].to(device),per_class=True)
+            f1_per_class = {test_data.node_unique_labels[i]:f1_per_class[i] for i in range(len(test_data.node_unique_labels))}
+            print(f'f1_per_class: {f1_per_class}')
+        except Exception as exception:
+            print(f'Error: {exception}')
         nodes_micro.append(micro)
         
         #test_graph.edata['preds'] = preds
@@ -280,7 +288,7 @@ def e2e(args):
                 'seed': cfg_train.seed
             },
             'RESULTS': {
-                'val-loss': stopper.best_score.cpu().detach().numpy(), 
+                'val-loss': stopper.best_score.cpu().detach().numpy().to_list(), 
                 #'f1-scores': f1,
 		        # 'f1-classes': classes_f1,
                 'nodes-f1': [macro, micro],

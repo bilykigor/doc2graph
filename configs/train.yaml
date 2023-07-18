@@ -3,7 +3,7 @@ batch_size_step: 128
 epoch_size_step: 100
 epochs: 10000
 lr: 1e-3
-weight_decay: 1e-4
+weight_decay: 0.001
 val_size : 0.1
 optimizer: Adam # or AdamW, SGD - NOT YET IMPLEMENTED
 scheduler:
