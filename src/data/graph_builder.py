@@ -496,7 +496,12 @@ class GraphBuilder():
                 for id, elem in enumerate(form):
                     boxs.append(unnormalize_box(elem['box'], size[0], size[1]))
                     texts.append(elem['text'])
-                    nl.append(elem['label'])
+                    if elem['label'] not in ['invoice_amount', 'invoice_date',
+                                            'invoice_number', 'payment_amount', 'payment_date',
+                                            'payment_number']:
+                        nl.append('O')
+                    else:
+                        nl.append(elem['label'])
                     ids.append(id)
                     #[pair_labels.append(pair) for pair in elem['linking']]
                 

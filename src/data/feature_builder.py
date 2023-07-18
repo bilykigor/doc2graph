@@ -12,6 +12,7 @@ from src.models.unet import Unet
 from src.data.utils import to_bin, to_bin2
 from src.data.utils import polar, get_histogram, polar2
 from src.utils import get_config
+from src.data.preprocessing import normalize_box
 
 class FeatureBuilder():
 
@@ -85,8 +86,16 @@ class FeatureBuilder():
             # https://pytorch.org/vision/stable/generated/torchvision.ops.roi_align.html?highlight=roi
             if self.add_visual:
                 img = Image.open(features['paths'][id]).convert('L')
-                visual_emb = self.visual_embedder(tvF.to_tensor(img).unsqueeze_(0).to(self.device)) # output [batch, channels, dim1, dim2]
-                bboxs = [torch.Tensor(b) for b in features['boxs'][id]]
+                width, height = img.size
+                img = img.resize((min(width,1000), min(1000,height)))
+                bboxs = [normalize_box(b, width, height) for b in features['boxs'][id]]
+                
+                input_tensor = tvF.to_tensor(img).unsqueeze_(0)
+                input_tensor = input_tensor.to(self.device)
+                visual_emb = self.visual_embedder(input_tensor) # output [batch, channels, dim1, dim2]
+                del input_tensor
+                
+                bboxs = [torch.Tensor(b) for b in bboxs]
                 bboxs = [torch.stack(bboxs, dim=0).to(self.device)]
                 h = [torchvision.ops.roi_align(input=ve, boxes=bboxs, spatial_scale=1/ min(size[1] / ve.shape[2] , size[0] / ve.shape[3]), output_size=1) for ve in visual_emb[1:]]
                 h = torch.cat(h, dim=1)
