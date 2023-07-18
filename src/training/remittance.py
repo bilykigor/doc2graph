@@ -201,6 +201,7 @@ def e2e(args):
 
     ################* STEP 3.5: VISUALIZATION ##########
     start_ind=0
+    npreds_all = npreds_all.detach()
     for ind in range(len(test_data)):
         graph = test_data.graphs[ind]
         n_nodes = graph.ndata['feat'].shape[0]
