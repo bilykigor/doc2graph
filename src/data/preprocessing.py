@@ -3,12 +3,35 @@ import torchvision
 import numpy as np
 from scipy.optimize import linprog
 import os
-from PIL import ImageDraw, Image
+from PIL import ImageDraw, Image, ImageFont
 import json
 import pytesseract
 from pytesseract import Output
 
 from src.paths import DATA, FUNSD_TEST
+
+def draw_boxes(image, boxes, labels=None, color='green', width=2):
+    draw = ImageDraw.Draw(image, "RGBA")
+    font = ImageFont.load_default()
+    if labels:
+        for box,label in zip(boxes,labels):
+            if color=='green':
+                fill=(0, 255, 0, 127)
+            else:
+                fill=(255, 0, 0, 127)
+            draw.rectangle(box, outline=(color), width=width,fill=fill)
+            text_position = (box[0]+10, box[1]-10)
+            text = str(label)
+            draw.text(text_position, text=text, font=font, fill=(255,0, 0)) # 
+    else:
+        for box in boxes:
+            if color=='green':
+                fill=(0, 255, 0, 127)
+            else:
+                fill=(255, 0, 0, 127)
+            draw.rectangle(box, outline=(color), width=width,fill=fill)
+        
+    return image
 
 def unnormalize_box(bbox, width, height):
     return [

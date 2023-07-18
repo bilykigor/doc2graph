@@ -1,3 +1,4 @@
+import os
 from datetime import datetime
 from sklearn.model_selection import KFold, ShuffleSplit
 import torch
@@ -17,6 +18,7 @@ from src.data.dataloader import Document2Graph
 from src.paths import *
 from src.models.graphs import SetModel
 from src.utils import get_config
+from src.data.preprocessing import unnormalize_box, draw_boxes
 from src.training.utils import *
 from src.data.graph_builder import GraphBuilder
 from torch.utils.data import DataLoader, RandomSampler, SequentialSampler
@@ -173,30 +175,53 @@ def e2e(args):
     test_data.get_info()
     
     model = sm.get_model(test_data.node_num_classes, test_data.edge_num_classes, test_data.get_chunks())
-    best_model = ''
     nodes_micro = []
     #edges_f1 = []
+    
     test_graph = dgl.batch(test_data.graphs).to(device)
 
     m = train_name+'.pt'
+    best_model = m
     model.load_state_dict(torch.load(CHECKPOINTS / m))
     model.eval()
     with torch.no_grad():
-
         n, e = model(test_graph, test_graph.ndata['feat'].to(device))
-        auc = compute_auc_mc(e.to(device), test_graph.edata['label'].to(device))
-        _, preds = torch.max(F.softmax(e, dim=1), dim=1)
+        # auc = compute_auc_mc(e.to(device), test_graph.edata['label'].to(device))
+        #_, preds = torch.max(F.softmax(e, dim=1), dim=1)
+        _, npreds_all = torch.max(F.softmax(n, dim=1), dim=1)
 
-        accuracy, f1 = get_binary_accuracy_and_f1(preds, test_graph.edata['label'])
+        #accuracy, f1 = get_binary_accuracy_and_f1(preds, test_graph.edata['label'])
         #_, classes_f1 = get_binary_accuracy_and_f1(preds, test_graph.edata['label'], per_class=True)
         #edges_f1.append(classes_f1[1])
 
         macro, micro = get_f1(n, test_graph.ndata['label'].to(device))
         nodes_micro.append(micro)
-        best_model = m
+        
+        #test_graph.edata['preds'] = preds
 
-        test_graph.edata['preds'] = preds
-
+    ################* STEP 3.5: VISUALIZATION ##########
+    start_ind=0
+    for ind in range(len(test_data)):
+        graph = test_data.graphs[ind]
+        n_nodes = graph.ndata['feat'].shape[0]
+        img_path = test_data.paths[ind]
+        img_name = os.path.basename(img_path)
+        inference = Image.open(img_path).convert('RGB')
+        size = inference.size
+        
+        npreds = npreds_all[start_ind:start_ind+n_nodes]
+        start_ind+=n_nodes
+        arr = npreds.numpy()
+        li = list(np.where(arr>1)[0]) 
+        
+        labels = [test_data.node_unique_labels[arr[i]] for i in li]
+        boxes = list(graph.ndata['geom'].numpy())
+        boxes = [unnormalize_box(box, size[0], size[1]) for box in boxes]
+        entities =  [boxes[i] for i in li]
+        
+        inference = draw_boxes(inference, entities, labels)
+        inference.save(test_data.output_dir / name)
+        
     ################* STEP 4: RESULTS ################
     print("\n### RESULTS {} ###".format(m))
     # print("F1 Edges: None {:.4f} - Pairs {:.4f}".format(classes_f1[0], classes_f1[1]))
@@ -222,14 +247,14 @@ def e2e(args):
 
     # ################* STEP 4: RESULTS ################
     #print("\n### BEST RESULTS ###")
-    print("AUC {:.4f}".format(auc))
-    print("Accuracy {:.4f}".format(accuracy))
-    print("F1 Edges: Macro {:.4f} - Micro {:.4f}".format(f1[0], f1[1]))
+    #print("AUC {:.4f}".format(auc))
+    #print("Accuracy {:.4f}".format(accuracy))
+    #print("F1 Edges: Macro {:.4f} - Micro {:.4f}".format(f1[0], f1[1]))
     #print("F1 Edges: None {:.4f} - Pairs {:.4f}".format(classes_f1[0], classes_f1[1]))
     print("F1 Nodes: Macro {:.4f} - Micro {:.4f}".format(macro, micro))
 
-    print("\n### AVG RESULTS ###")
-    print("Semantic Entity Labeling: MEAN ", mean(nodes_micro), " STD: ", np.std(nodes_micro))
+    #print("\n### AVG RESULTS ###")
+    #print("Semantic Entity Labeling: MEAN ", mean(nodes_micro), " STD: ", np.std(nodes_micro))
     #print("Entity Linking: MEAN ", mean(edges_f1),"STD", np.std(edges_f1))
 
     if not args.test:
@@ -256,12 +281,14 @@ def e2e(args):
             },
             'RESULTS': {
                 'val-loss': stopper.best_score, 
-                'f1-scores': f1,
+                #'f1-scores': f1,
 		        # 'f1-classes': classes_f1,
                 'nodes-f1': [macro, micro],
                 # 'std-pairs': np.std(edges_f1),
                 # 'mean-pairs': mean(edges_f1)
             }}
+        
+        print(results)
         try:
             save_test_results(train_name, results)
         except Exception as exception:

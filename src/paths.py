@@ -35,3 +35,5 @@ PAU_TEST = DATA / 'PAU' / 'test'
 REMITTANCE_TRAIN = SIDE_DATA / 'train'
 REMITTANCE_TEST = SIDE_DATA / 'test'
 REMITTANCE_VAL = SIDE_DATA  / 'validation'
+
+INF = DATA / 'INF'
