@@ -61,6 +61,7 @@ class FeatureBuilder():
             size = Image.open(features['paths'][id]).size
             feats = [[] for _ in range(len(features['boxs'][id]))]
             #geom = [self.sg(box, size) for box in features['boxs'][id]]
+            geom = [normalize_box(box, size[0], size[1]) for box in features['boxs'][id]]
             chunks = []
 
             # 'geometrical' features
