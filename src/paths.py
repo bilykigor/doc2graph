@@ -6,7 +6,7 @@ import os
 HERE = Path(os.path.dirname(os.path.abspath(__file__)))
 config = dotenv_values(HERE / "root.env")
 ROOT = Path(config['ROOT'])
-SIDE_DATA = Path('/content/drive/MyDrive/OCR/remittance_layoutlm_debug/clusters/77/output')
+SIDE_DATA = Path('/content/drive/MyDrive/OCR/remittance_layoutlm_debug/clusters/2/output')
 
 # PROJECT TREE
 DATA = ROOT / 'DATA'
