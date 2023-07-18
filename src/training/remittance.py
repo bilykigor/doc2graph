@@ -36,7 +36,6 @@ def e2e(args):
         ################* STEP 0: LOAD DATA ################
         data = Document2Graph(name='REMITTANCE TRAIN', src_path=REMITTANCE_TRAIN, device = device, output_dir=TRAIN_SAMPLES)
         data.get_info()
-        train_loader = DataLoader(range(len(data)), sampler=RandomSampler(range(len(data))), batch_size=cfg_train.batch_size,num_workers=0)
         val_data = Document2Graph(name='REMITTANCE VALIDATION', src_path=REMITTANCE_VAL, device = device, output_dir=TEST_SAMPLES)
         val_data.get_info()
         val_loader = DataLoader(range(len(val_data)), sampler=SequentialSampler(range(len(val_data))), batch_size=cfg_train.batch_size,num_workers=0)
@@ -58,7 +57,6 @@ def e2e(args):
             
         # TRAIN
         for epoch in range(cfg_train.epochs):
-            
             # TRAINING
 
             total_train_loss = 0
@@ -68,6 +66,7 @@ def e2e(args):
             
             model.train()
 
+            train_loader = DataLoader(range(len(data)), sampler=RandomSampler(range(len(data))), batch_size=cfg_train.batch_size+int(epoch/cfg_train.epoch_size_step)*cfg_train.batch_size_step,num_workers=0)
             for train_index in train_loader:
                 
                 train_graphs = [data.graphs[i] for i in train_index]
@@ -201,7 +200,7 @@ def e2e(args):
 
     ################* STEP 3.5: VISUALIZATION ##########
     start_ind=0
-    npreds_all = npreds_all.detach()
+    npreds_all = npreds_all.cpu().detach().numpy()
     for ind in range(len(test_data)):
         graph = test_data.graphs[ind]
         n_nodes = graph.ndata['feat'].shape[0]

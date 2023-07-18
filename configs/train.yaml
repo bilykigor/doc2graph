@@ -1,4 +1,6 @@
 batch_size: 128
+batch_size_step: 128
+epoch_size_step: 100
 epochs: 1000
 lr: 1e-3
 weight_decay: 1e-4
