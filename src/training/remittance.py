@@ -262,7 +262,10 @@ def e2e(args):
                 # 'std-pairs': np.std(edges_f1),
                 # 'mean-pairs': mean(edges_f1)
             }}
-        #save_test_results(train_name, results)
+        try:
+            save_test_results(train_name, results)
+        except Exception as exception:
+            print(f'Error: {exception}')
     
         print("END TRAINING:", time.time() - start_training)
     return {}#{'LINKS [MAX, MEAN, STD]': [classes_f1[1], mean(edges_f1), np.std(edges_f1)], 'NODES [MAX, MEAN, STD]': [micro, mean(nodes_micro), np.std(nodes_micro)]}
