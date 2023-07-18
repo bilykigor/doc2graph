@@ -43,7 +43,7 @@ def e2e(args):
         model = sm.get_model(data.node_num_classes, data.edge_num_classes, data.get_chunks())
         optimizer = torch.optim.AdamW(model.parameters(), lr=float(cfg_train.lr), weight_decay=float(cfg_train.weight_decay))
         # scheduler = ReduceLROnPlateau(optimizer, 'max', patience=400, min_lr=1e-3, verbose=True, factor=0.01)
-        scheduler = StepLR(optimizer, step_size=500, gamma=0.5)
+        scheduler = StepLR(optimizer, step_size=500, gamma=0.8)
         e = datetime.now()
         train_name = args.model + f'-{e.strftime("%Y%m%d-%H%M")}'
         stopper = EarlyStopping(model, name=train_name, metric=cfg_train.stopper_metric, patience=100)
