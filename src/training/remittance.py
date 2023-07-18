@@ -80,7 +80,7 @@ def e2e(args):
                 
                 l2_lambda = 0.001
                 l2_norm = sum(p.pow(2.0).sum() for p in model.parameters())
-                loss = tot_loss + l2_lambda * l2_norm
+                loss = tot_loss #+ l2_lambda * l2_norm
                 
                 macro, micro = get_f1(n_scores, tg.ndata['label'].to(device))
                 auc = compute_auc_mc(e_scores.to(device), tg.edata['label'].to(device))
@@ -288,7 +288,7 @@ def e2e(args):
                 'seed': cfg_train.seed
             },
             'RESULTS': {
-                'val-loss': stopper.best_score.cpu().detach().numpy().to_list(), 
+                'val-loss': stopper.best_score.cpu().detach().numpy().tolist(), 
                 #'f1-scores': f1,
 		        # 'f1-classes': classes_f1,
                 'nodes-f1': [macro, micro],
