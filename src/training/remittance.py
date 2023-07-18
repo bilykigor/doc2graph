@@ -280,7 +280,7 @@ def e2e(args):
                 'seed': cfg_train.seed
             },
             'RESULTS': {
-                'val-loss': stopper.best_score, 
+                'val-loss': stopper.best_score.cpu().detach().numpy(), 
                 #'f1-scores': f1,
 		        # 'f1-classes': classes_f1,
                 'nodes-f1': [macro, micro],
