@@ -328,7 +328,7 @@ class GraphBuilder():
         # justOne = random.choice(os.listdir(os.path.join(src, 'adjusted_annotations'))).split(".")[0]
         
         if self.node_granularity == 'gt':
-            for file in tqdm(os.listdir(os.path.join(src, 'adjusted_annotations'))[:128], desc='Creating graphs - GT'):
+            for file in tqdm(os.listdir(os.path.join(src, 'adjusted_annotations')), desc='Creating graphs - GT'):
             
                 img_name = f'{file.split(".")[0]}.png'
                 img_path = os.path.join(src, 'images', img_name)
@@ -477,7 +477,7 @@ class GraphBuilder():
         # justOne = random.choice(os.listdir(os.path.join(src, 'adjusted_annotations'))).split(".")[0]
         
         if self.node_granularity == 'gt':
-            files = os.listdir(os.path.join(src, 'layoutlm_annotations'))
+            files = os.listdir(os.path.join(src, 'layoutlm_annotations'))[:24]
             for file in tqdm(files, desc='Creating graphs - GT'):
             
                 img_name = f'{file.split(".")[0]}.jpg'
