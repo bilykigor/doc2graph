@@ -220,7 +220,7 @@ def e2e(args):
         entities =  [boxes[i] for i in li]
         
         inference = draw_boxes(inference, entities, labels)
-        inference.save(test_data.output_dir / name)
+        inference.save(test_data.output_dir / img_name)
         
     ################* STEP 4: RESULTS ################
     print("\n### RESULTS {} ###".format(m))
