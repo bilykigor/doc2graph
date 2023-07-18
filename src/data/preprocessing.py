@@ -10,7 +10,14 @@ from pytesseract import Output
 
 from src.paths import DATA, FUNSD_TEST
 
-
+def unnormalize_box(bbox, width, height):
+    return [
+        width * (bbox[0] / 1000),
+        height * (bbox[1] / 1000),
+        width * (bbox[2] / 1000),
+        height * (bbox[3] / 1000),
+    ]
+    
 def scale_back(r, w, h): return [int(r[0]*w),
                                  int(r[1]*h), int(r[2]*w), int(r[3]*h)]
 

@@ -10,7 +10,7 @@ from tqdm import tqdm
 import xml.etree.ElementTree as ET
 import easyocr
 
-from src.data.preprocessing import load_predictions
+from src.data.preprocessing import load_predictions, unnormalize_box
 from src.data.utils import polar
 from src.paths import DATA, FUNSD_TEST
 from src.utils import get_config
@@ -483,6 +483,8 @@ class GraphBuilder():
                 img_name = f'{file.split(".")[0]}.jpg'
                 img_path = os.path.join(src, 'images', img_name)
                 features['paths'].append(img_path)
+                
+                size = Image.open(img_path).size
 
                 with open(os.path.join(src, 'layoutlm_annotations', file), 'r') as f:
                     form = json.load(f)
@@ -492,7 +494,7 @@ class GraphBuilder():
                 pair_labels = list()
 
                 for id, elem in enumerate(form):
-                    boxs.append(elem['box'])
+                    boxs.append(unnormalize_box(elem['box'], size[0], size[1]))
                     texts.append(elem['text'])
                     nl.append(elem['label'])
                     ids.append(id)
