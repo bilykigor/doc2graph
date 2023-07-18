@@ -132,7 +132,7 @@ class FeatureBuilder():
                     sin2.append(s2)
                     cos2.append(c2)
                 
-                #distances = [d1+d2 for d1,d2 in zip(distances1,distances2)]
+                distances = [0.5(d1+d2) for d1,d2 in zip(distances1,distances2)]
                 #m = max(distances)
                 
                 distances1 = [d/m for d in distances1]
