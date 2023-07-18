@@ -6,6 +6,7 @@ import os
 HERE = Path(os.path.dirname(os.path.abspath(__file__)))
 config = dotenv_values(HERE / "root.env")
 ROOT = Path(config['ROOT'])
+SIDE_DATA = Path('/content/drive/MyDrive/OCR/remittance_layoutlm_debug/clusters/77/output')
 
 # PROJECT TREE
 DATA = ROOT / 'DATA'
@@ -31,6 +32,6 @@ PAU_TRAIN = DATA / 'PAU' / 'train'
 PAU_TEST = DATA / 'PAU' / 'test'
 
 # REMITTANCE
-REMITTANCE_TRAIN = DATA / 'REMITTANCE' / 'train'
-REMITTANCE_TEST = DATA / 'REMITTANCE' / 'test'
-REMITTANCE_VAL = DATA / 'REMITTANCE' / 'validation'
+REMITTANCE_TRAIN = SIDE_DATA / 'train'
+REMITTANCE_TEST = SIDE_DATA / 'test'
+REMITTANCE_VAL = SIDE_DATA  / 'validation'
