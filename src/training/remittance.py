@@ -66,7 +66,9 @@ def e2e(args):
             
             model.train()
 
-            train_loader = DataLoader(range(len(data)), sampler=RandomSampler(range(len(data))), batch_size=cfg_train.batch_size+int(epoch/cfg_train.epoch_size_step)*cfg_train.batch_size_step,num_workers=0)
+            batch_size = cfg_train.batch_size+int(epoch/cfg_train.epoch_size_step)*cfg_train.batch_size_step
+            batch_size = min([batch_size,cfg_train.max_batch_size])
+            train_loader = DataLoader(range(len(data)), sampler=RandomSampler(range(len(data))), batch_size = batch_size, num_workers = 0)
             for train_index in train_loader:
                 
                 train_graphs = [data.graphs[i] for i in train_index]

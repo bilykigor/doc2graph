@@ -195,6 +195,10 @@ class FeatureBuilder():
         return chunks, len(chunks)
     
     def get_info(self):
-        print(f"-> textual feats: {self.add_embs}\n-> visual feats: {self.add_visual}\n-> edge feats: {self.add_eweights}")
+        print(f"-> textual feats: {self.add_embs}\n \
+                -> visual feats: {self.add_visual}\n \
+                -> geom feats: {self.add_geom}\n \
+                -> size feats: {self.add_size}\n \
+                -> edge feats: {self.add_eweights}")
 
     
