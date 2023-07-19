@@ -69,7 +69,7 @@ class FeatureBuilder():
                 
                 # TODO add 2d encoding like "LayoutLM*"
                 # [feats[idx].extend(self.sg(box, size)) for idx, box in enumerate(features['boxs'][id])]
-                [feats[idx].extend(normalize_box(box, size[0], size[1])) + [box[2]-box[0],box[3]-box[1]] for idx, box in enumerate(features['boxs'][id])]
+                [feats[idx].extend(normalize_box(box, size[0], size[1]) + [box[2]-box[0],box[3]-box[1]]) for idx, box in enumerate(features['boxs'][id])]
                 chunks.append(6)
             
             # HISTOGRAM OF TEXT
