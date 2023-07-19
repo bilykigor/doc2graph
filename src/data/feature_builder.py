@@ -3,6 +3,7 @@ from typing import Tuple
 import spacy
 import torch
 import torchvision
+import numpy as np
 from math import sqrt
 from tqdm import tqdm
 from PIL import Image, ImageDraw
@@ -26,6 +27,7 @@ class FeatureBuilder():
         self.cfg_preprocessing = get_config('preprocessing')
         self.device = d
         self.add_geom = self.cfg_preprocessing.FEATURES.add_geom
+        self.add_size = self.cfg_preprocessing.FEATURES.add_size
         self.add_embs = self.cfg_preprocessing.FEATURES.add_embs
         self.add_hist = self.cfg_preprocessing.FEATURES.add_hist
         self.add_visual = self.cfg_preprocessing.FEATURES.add_visual
@@ -63,14 +65,23 @@ class FeatureBuilder():
             #geom = [self.sg(box, size) for box in features['boxs'][id]]
             geom = [normalize_box(box, size[0], size[1]) for box in features['boxs'][id]]
             chunks = []
+            
+            box_height = [box[3]-box[1] for box in geom]
+            m = np.median(box_height)
+            # m = sqrt((size[0]*size[0] + size[1]*size[1]))
 
             # 'geometrical' features
             if self.add_geom:
                 
                 # TODO add 2d encoding like "LayoutLM*"
                 # [feats[idx].extend(self.sg(box, size)) for idx, box in enumerate(features['boxs'][id])]
-                [feats[idx].extend(normalize_box(box, size[0], size[1]) + [box[2]-box[0],box[3]-box[1]]) for idx, box in enumerate(features['boxs'][id])]
-                chunks.append(6)
+                [feats[idx].extend(box) for idx, box in enumerate(geom)]
+                chunks.append(4)
+                
+            if self.add_size:
+                
+                [feats[idx].extend([box[2]-box[0],box[3]-box[1]]) for idx, box in enumerate(geom)]
+                chunks.append(2)
             
             # HISTOGRAM OF TEXT
             if self.add_hist:
@@ -132,8 +143,7 @@ class FeatureBuilder():
                     cos2.append(c2)
                 
                 distances = [0.5*(d1+d2) for d1,d2 in zip(distances1,distances2)]
-                m = max(distances)
-                # m = sqrt((size[0]*size[0] + size[1]*size[1]))
+                max_distances = max(distances)
                 
                 distances1 = [d/m for d in distances1]
                 distances2 = [d/m for d in distances2]

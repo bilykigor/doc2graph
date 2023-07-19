@@ -11,7 +11,8 @@ FEATURES:
   add_embs: true
   add_eweights: true
   add_fudge: false
-  add_geom: true
+  add_geom: false
+  add_size: true
   add_hist: false
   add_visual: false
 GRAPHS:

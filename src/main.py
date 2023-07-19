@@ -17,6 +17,8 @@ def main():
     # features
     parser.add_argument('--add-geom', '-addG', action="store_true",
                         help="add geometrical features to nodes")
+    parser.add_argument('--add-size', '-addS', action="store_true",
+                        help="add boxs size features to nodes")
     parser.add_argument('--add-embs', '-addT', action="store_true",
                         help="add textual embeddings to nodes")
     parser.add_argument('--add-hist', '-addH', action="store_true",
