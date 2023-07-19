@@ -69,8 +69,8 @@ class FeatureBuilder():
                 
                 # TODO add 2d encoding like "LayoutLM*"
                 # [feats[idx].extend(self.sg(box, size)) for idx, box in enumerate(features['boxs'][id])]
-                [feats[idx].extend(normalize_box(box, size[0], size[1])) for idx, box in enumerate(features['boxs'][id])]
-                chunks.append(4)
+                [feats[idx].extend(normalize_box(box, size[0], size[1])) + [box[2]-box[0],box[3]-box[1]] for idx, box in enumerate(features['boxs'][id])]
+                chunks.append(6)
             
             # HISTOGRAM OF TEXT
             if self.add_hist:
@@ -120,7 +120,6 @@ class FeatureBuilder():
 
                 # TODO CHOOSE WHICH DISTANCE NORMALIZATION TO APPLY
                 #! with fully connected simply normalized with max distance between distances
-                m = sqrt((size[0]*size[0] + size[1]*size[1]))
                 # parable = lambda x : (-x+1)**4
                 
                 for pair in zip(srcs, dsts):
@@ -133,7 +132,8 @@ class FeatureBuilder():
                     cos2.append(c2)
                 
                 distances = [0.5*(d1+d2) for d1,d2 in zip(distances1,distances2)]
-                #m = max(distances)
+                m = max(distances)
+                # m = sqrt((size[0]*size[0] + size[1]*size[1]))
                 
                 distances1 = [d/m for d in distances1]
                 distances2 = [d/m for d in distances2]

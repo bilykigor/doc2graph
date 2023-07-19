@@ -193,7 +193,15 @@ class GraphBuilder():
 
         for path in paths:
             reader = easyocr.Reader(['en']) #! TODO: in the future, handle multilanguage!
-            result = reader.readtext(path, paragraph=True)
+            result = reader.readtext(path, 
+                             min_size=10, 
+                            slope_ths=0.2, 
+                            ycenter_ths=0.5, 
+                            height_ths=0.5, 
+                            width_ths=0.5,
+                            decoder='wordbeamsearch', 
+                            beamWidth=10, )
+            
             img = Image.open(path).convert('RGB')
             draw = ImageDraw.Draw(img)
             boxs, texts = list(), list()
