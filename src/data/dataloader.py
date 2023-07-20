@@ -85,10 +85,12 @@ class Document2Graph(data.Dataset):
                                 edge_index= torch.stack(dgl_graph.edges(), dim=0).to(torch.int64), 
                                 edge_attr= dgl_graph.edata['feat'],
                                 y = dgl_graph.ndata['label'])
+        
+        geometric_graph = geometric_graph.to(self.device)
         geometric_graph['path'] = self.paths[index]
         geometric_graph['geom'] = dgl_graph.ndata['geom']
         
-        return geometric_graph.to(self.device)
+        return geometric_graph
     
     def __len__(self):
         """ Returns data length
