@@ -30,6 +30,8 @@ class Document2Graph(data.Dataset):
         """
 
         # initialize class
+        self.device = device
+        
         if not os.path.isdir(src_path): raise Exception(f'src_path {src_path} does not exists\n -> please provide an existing path')
 
         self.name = name
@@ -86,7 +88,7 @@ class Document2Graph(data.Dataset):
         geometric_graph['path'] = self.paths[index]
         geometric_graph['geom'] = dgl_graph.ndata['geom']
         
-        return geometric_graph
+        return geometric_graph.to(self.device)
     
     def __len__(self):
         """ Returns data length
