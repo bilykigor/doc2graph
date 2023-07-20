@@ -1,10 +1,15 @@
-from random import randint
-from typing import Tuple
-import torch
-import torch.utils.data as data
 import os
 import numpy as np
+
+from random import randint
+from typing import Tuple
+
+import torch
+import torch.utils.data as data
+
+from torch_geometric.data import Data
 import dgl
+
 from PIL import Image, ImageDraw
 
 from src.data.feature_builder import FeatureBuilder
@@ -72,7 +77,16 @@ class Document2Graph(data.Dataset):
         Args:
             index (int): index of the item to be taken.
         """
-        return self.graphs[index]
+        dgl_graph = self.graphs[index]
+        
+        geometric_graph = Data(x=dgl_graph.ndata['feat'], 
+                                edge_index= torch.stack(dgl_graph.edges(), dim=0).to(torch.int64), 
+                                edge_attr= dgl_graph.edata['feat'],
+                                y = dgl_graph.ndata['label'])
+        geometric_graph['path'] = self.paths[index]
+        geometric_graph['geom'] = dgl_graph.ndata['geom']
+        
+        return geometric_graph
     
     def __len__(self):
         """ Returns data length
@@ -116,23 +130,6 @@ class Document2Graph(data.Dataset):
         print(f"-> graph example: {self.graphs[num_graph]}")
         return
     
-    def balance(self, cls = 'none', indices = None):
-        """ Calls balance_edges() of GraphBuilder.
-
-        Args:
-            cls (str): 
-        """
-
-        cls = int(np.where(cls == self.edge_unique_labels)[0][0])
-        if indices is None:
-            for i, g in enumerate(self.graphs):
-                self.graphs[i] = self.GB.balance_edges(g, self.edge_num_classes, cls = cls)
-        else:
-            for id in indices:
-                self.graphs[id] = self.GB.balance_edges(self.graphs[id], self.edge_num_classes, cls = cls)
-        
-        return
-    
     def get_chunks(self):
         """ get feature_chunks, meaning the length of different modalities (features) contributions inside nodes.
 
@@ -141,6 +138,12 @@ class Document2Graph(data.Dataset):
         """
         if len(self.feature_chunks) != self.num_mods: self.feature_chunks.pop(0)
         return self.feature_chunks
+    
+    def get_nclasses(self):
+        return len(self.node_unique_labels)
+    
+    def get_efeatures_size(self):
+        return self.graphs[0].edata['feat'].shape[1]
     
     def print_graph(self, num=None, node_labels=None, labels_ids=None, name='doc_graph', bidirect=True, regions=[], preds=None):
         """ Print a given graph over its image document.

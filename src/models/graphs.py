@@ -1,8 +1,9 @@
 import torch
-import torch.nn as nn
+import torch.nn as nn 
+import torch.nn.functional as F 
+from torch_geometric.nn import GCNConv, GATConv
 import dgl.function as fn
 import math
-import torch.nn.functional as F
 
 from src.paths import CFGM
 from src.utils import get_config
@@ -56,6 +57,10 @@ class SetModel():
         elif self.name == 'E2E':
             edge_pred_features = int((math.log2(get_config('preprocessing').FEATURES.num_polar_bins) + nodes)*2)
             m = E2E(nodes, edges, self.cfg_model.num_layers, self.cfg_model.dropout, chunks, self.cfg_model.out_chunks, self.cfg_model.hidden_dim, self.device,  edge_pred_features, self.cfg_model.doProject)
+        
+        elif self.name == 'GAT':
+            edge_pred_features = int((math.log2(get_config('preprocessing').FEATURES.num_polar_bins) + nodes)*2)
+            m = GAT(nodes, edges, self.cfg_model.n_heads, self.cfg_model.dropout, chunks, self.cfg_model.hidden_dim, self.device,  edge_pred_features, self.cfg_model.doProject)
 
         else:
             raise Exception(f"Error! Model {self.name} do not exists.")
@@ -188,6 +193,55 @@ class E2E(nn.Module):
         e = self.edge_pred(g, h, n)
         
         return n, e
+    
+################
+###### GAT #####
+
+class GAT(nn.Module):
+    def __init__(self, node_classes, 
+                       num_edge_features, 
+                       n_heads, 
+                       dropout, 
+                       in_chunks, 
+                       hidden_dim, 
+                       device,
+                       edge_pred_features,
+                       doProject=True):
+
+        super().__init__()
+        
+        self.drop = nn.Dropout(dropout)
+
+        # Project inputs into higher space
+        self.projector = InputProjector(in_chunks, hidden_dim, device, doProject, dropout)
+
+        # Perform message passing
+        m_hidden = hidden_dim #self.projector.get_out_lenght()
+        
+        self.message_passing = GATConv(m_hidden, m_hidden, edge_dim = num_edge_features, heads=n_heads)
+
+        # Define edge predictor layer
+        #self.edge_pred = MLPPredictor_E2E(m_hidden, hidden_dim, edge_classes, dropout,  edge_pred_features)
+
+        # Define node predictor layer
+        node_pred = []
+        node_pred.append(nn.Linear(n_heads*m_hidden, node_classes))
+        node_pred.append(nn.LayerNorm(node_classes))
+        self.node_pred = nn.Sequential(*node_pred)
+        
+
+    def forward(self, data):
+        x, edge_index, edge_attr = data.x, data.edge_index, data.edge_attr
+        
+        x = self.projector(x)
+        
+        x = self.message_passing(x, edge_index, edge_attr=edge_attr)
+        x = F.relu(x)
+        x = self.drop(x)
+
+        x = self.node_pred(x)
+        
+        return x
 
 ################
 ##### LYRS #####
@@ -356,3 +410,71 @@ class MLPPredictor_E2E(nn.Module):
             graph.ndata['cls'] = cls
             graph.apply_edges(self.apply_edges)
             return graph.edata['score']
+    
+class Attention(nn.Module):
+    # single head attention
+    def __init__(self, in_features, out_features, alpha):
+        super(Attention, self).__init__()
+        self.alpha = alpha
+
+        self.W = nn.Linear(in_features, out_features, bias = False)
+        self.a_T = nn.Linear(2 * out_features, 1, bias = False)
+
+        nn.init.xavier_uniform_(self.W.weight)
+        nn.init.xavier_uniform_(self.a_T.weight)
+
+    def forward(self, h, adj):
+        # h : a tensor with size [N, F] where N be a number of nodes and F be a number of features
+        N = h.size(0)
+        Wh = self.W(h) # h -> Wh : [N, F] -> [N, F']
+        
+        # H1 : [N, N, F'], H2 : [N, N, F'], attn_input = [N, N, 2F']
+
+        # H1 = [[h1 h1 ... h1]   |  H2 = [[h1 h2 ... hN]   |   attn_input = [[h1||h1 h1||h2 ... h1||hN]
+        #       [h2 h2 ... h2]   |        [h1 h2 ... hN]   |                 [h2||h1 h2||h2 ... h2||hN]
+        #            ...         |             ...         |                         ...
+        #       [hN hN ... hN]]  |        [h1 h2 ... hN]]  |                 [hN||h1 hN||h2 ... hN||hN]]
+        
+        H1 = Wh.unsqueeze(1).repeat(1,N,1)
+        H2 = Wh.unsqueeze(0).repeat(N,1,1)
+        attn_input = torch.cat([H1, H2], dim = -1)
+
+        e = F.leaky_relu(self.a_T(attn_input).squeeze(-1), negative_slope = self.alpha) # [N, N]
+        
+        attn_mask = -1e18*torch.ones_like(e)
+        masked_e = torch.where(adj > 0, e, attn_mask)
+        attn_scores = F.softmax(masked_e, dim = -1) # [N, N]
+
+        h_prime = torch.mm(attn_scores, Wh) # [N, F']
+
+        return F.elu(h_prime) # [N, F']
+
+class GraphAttentionLayer(nn.Module):
+    # multi head attention
+    def __init__(self, in_features, out_features, num_heads, alpha, concat=True):
+        super(GraphAttentionLayer, self).__init__()
+        self.concat = concat
+        self.attentions = nn.ModuleList([Attention(in_features, out_features, alpha) for _ in range(num_heads)])
+        
+    def forward(self, input, adj):
+        # input (= X) : a tensor with size [N, F]
+
+        if self.concat :
+            # concatenate
+            outputs = []
+            for attention in self.attentions:
+                outputs.append(attention(input, adj))
+            
+            return torch.cat(outputs, dim = -1) # [N, KF']
+
+        else :
+            # average
+            output = None
+            for attention in self.attentions:
+                if output == None:
+                    output = attention(input, adj)
+                else:
+                    output += attention(input, adj)
+            
+            return output/len(self.attentions) # [N, F']
+        

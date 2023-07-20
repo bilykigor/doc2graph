@@ -50,6 +50,7 @@ def set_preprocessing(args: ArgumentParser) -> None:
     with open(CONFIGS / 'base.yaml') as fileobj:
         cfg_preprocessing = dict(yaml.safe_load(fileobj))
     cfg_preprocessing['FEATURES']['add_geom'] = args.add_geom
+    cfg_preprocessing['FEATURES']['add_epolar'] = args.add_epolar
     cfg_preprocessing['FEATURES']['add_size'] = args.add_size
     cfg_preprocessing['FEATURES']['add_embs'] = args.add_embs
     cfg_preprocessing['FEATURES']['add_hist'] = args.add_hist

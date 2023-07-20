@@ -1,0 +1,6 @@
+name: GAT
+dropout: 0.2
+n_heads: 4
+hidden_dim: 100
+num_layers: 1
+doProject: True

@@ -197,18 +197,22 @@ def get_features(args : ArgumentParser) -> Tuple[str, str]:
         args (ArgumentParser) : your ArgumentParser
     """
     feat_n = ''
-    feat_e = 'false'
+    feat_e = ''
 
     if args.add_geom:
-        feat_n += 'geom-'
+        feat_n += 'geom+ '
+    if args.add_size:
+        feat_n += 'size+ '
+    if args.add_epolar:
+        feat_e = 'polar+ '
     if args.add_embs:
-        feat_n += 'text-'
+        feat_n += 'text+ '
     if args.add_visual:
-        feat_n += 'visual-'
+        feat_n += 'visual+ '
     if args.add_hist:
-        feat_n += 'histogram-'
+        feat_n += 'histogram+ '
     if args.add_eweights:
-        feat_e = 'true'
+        feat_e = 'eweights+ '
         
     return feat_n, feat_e
 

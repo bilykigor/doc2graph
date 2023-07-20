@@ -19,6 +19,8 @@ def main():
                         help="add geometrical features to nodes")
     parser.add_argument('--add-size', '-addS', action="store_true",
                         help="add boxs size features to nodes")
+    parser.add_argument('--add-epolar', '-addP', action="store_true",
+                        help="add polar relations of nodes")
     parser.add_argument('--add-embs', '-addT', action="store_true",
                         help="add textual embeddings to nodes")
     parser.add_argument('--add-hist', '-addH', action="store_true",
@@ -41,7 +43,7 @@ def main():
                         help="number of bins into which discretize the space for edge polar features. It must be a power of 2: Default 8.")
 
     # training
-    parser.add_argument("--model", type=str, default='e2e',
+    parser.add_argument("--model", type=str, default='gat',
                         help="which model to use, which yaml file to load: e2e, edge or gcn")
     parser.add_argument("--gpu", type=int, default=-1,
                         help="which GPU to use. Set -1 to use CPU.")

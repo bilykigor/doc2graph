@@ -22,6 +22,8 @@ from src.data.preprocessing import unnormalize_box, draw_boxes
 from src.training.utils import *
 from src.data.graph_builder import GraphBuilder
 from torch.utils.data import DataLoader, RandomSampler, SequentialSampler
+from torch_geometric.loader import DataLoader as GDataLoader
+
 
 def e2e(args):
 
@@ -276,7 +278,227 @@ def e2e(args):
             'weights': best_model,
             'net-params': sm.get_total_params(), 
             'num-layers': model.num_layers,
-            'projector-output': model.out_chunks,
+            'projector-output': model.hidden_dim,
+            'dropout': model.dropout,
+            'lastFC': model.hidden_dim
+            },
+            'FEATURES': {
+                'nodes': feat_n, 
+                'edges': feat_e
+            },
+            'PARAMS': {
+                'start-lr': cfg_train.lr,
+                'weight-decay': cfg_train.weight_decay,
+                'seed': cfg_train.seed
+            },
+            'RESULTS': {
+                'val-loss': stopper.best_score.cpu().detach().numpy().tolist(), 
+                #'f1-scores': f1,
+		        # 'f1-classes': classes_f1,
+                'nodes-f1': [macro, micro],
+                # 'std-pairs': np.std(edges_f1),
+                # 'mean-pairs': mean(edges_f1)
+            }}
+        
+        print(results)
+        try:
+            save_test_results(train_name, results)
+        except Exception as exception:
+            print(f'Error: {exception}')
+    
+        print("END TRAINING:", time.time() - start_training)
+    return {}#{'LINKS [MAX, MEAN, STD]': [classes_f1[1], mean(edges_f1), np.std(edges_f1)], 'NODES [MAX, MEAN, STD]': [micro, mean(nodes_micro), np.std(nodes_micro)]}
+
+def gat(args):
+
+    # configs
+    start_training = time.time()
+    cfg_train = get_config('train')
+    seed(cfg_train.seed)
+    device = get_device(args.gpu)
+    sm = SetModel(name=args.model, device=device)
+
+    if not args.test:
+        ################* STEP 0: LOAD DATA ################
+        data = Document2Graph(name='REMITTANCE TRAIN', src_path=REMITTANCE_TRAIN, device = device, output_dir=TRAIN_SAMPLES)
+        data.get_info()
+        val_data = Document2Graph(name='REMITTANCE VALIDATION', src_path=REMITTANCE_VAL, device = device, output_dir=TEST_SAMPLES)
+        val_data.get_info()
+        val_loader = GDataLoader(val_data, batch_size=cfg_train.batch_size, shuffle=False)
+        ################* STEP 1: CREATE MODEL ################
+        model = sm.get_model(data.get_nclasses(), data.get_efeatures_size(), data.get_chunks())
+        optimizer = torch.optim.AdamW(model.parameters(), lr=float(cfg_train.lr), weight_decay=float(cfg_train.weight_decay))
+        # scheduler = ReduceLROnPlateau(optimizer, 'max', patience=400, min_lr=1e-3, verbose=True, factor=0.01)
+        scheduler = StepLR(optimizer, step_size=500, gamma=0.8)
+        e = datetime.now()
+        train_name = args.model + f'-{e.strftime("%Y%m%d-%H%M")}'
+        stopper = EarlyStopping(model, name=train_name, metric=cfg_train.stopper_metric, patience=100)
+        writer = SummaryWriter(log_dir=RUNS)
+        #convert_imgs = transforms.ToTensor()
+            
+        ################* STEP 2: TRAINING ################
+        print("\n### TRAINING ###")
+        print(f"-> Training samples: {len(data)}")
+        print(f"-> Validation samples: {len(val_data)}\n")
+            
+        # TRAIN
+        for epoch in range(cfg_train.epochs):
+            # TRAINING
+
+            total_train_loss = 0
+            total_train_macro = 0
+            total_train_micro = 0
+            
+            model.train()
+
+            batch_size = cfg_train.batch_size+int(epoch/cfg_train.epoch_size_step)*cfg_train.batch_size_step
+            batch_size = min([batch_size,cfg_train.max_batch_size])
+            train_loader = GDataLoader(data, batch_size = batch_size, shuffle = True)
+            for tg in train_loader:
+                tg = tg.to(device)
+                n_scores = model(tg)
+                
+                #print(n_scores.shape, tg.y.shape)
+                loss = compute_crossentropy_loss(n_scores, tg.y,device)
+                tot_loss = loss
+                
+                macro, micro = get_f1(n_scores, tg.y)
+                
+                total_train_loss += tot_loss
+                total_train_macro += macro
+                total_train_micro += micro
+                
+                # Backward and optimize
+                # ======================================================================
+                # Clip the norm of the gradients to 1.0. This is to help prevent the "exploding gradients" problem.
+                torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0) 
+
+                optimizer.zero_grad()
+                model.zero_grad() 
+                loss.backward()    
+                    
+                optimizer.step()
+
+                # ======================================================================
+                # if cfg_train.stopper_metric == 'loss_diff':
+                #     step_value = 0-tot_loss.item()
+                # elif cfg_train.stopper_metric == 'loss':
+                #     step_value = tot_loss.item()
+                # elif cfg_train.stopper_metric == 'acc':
+                #     step_value = 0
+                
+            avg_train_loss = total_train_loss / len(train_loader)
+            avg_train_micro = total_train_micro / len(train_loader)
+            avg_train_macro = total_train_macro / len(train_loader)    
+             
+            ### VALIDATION    
+            total_val_loss = 0
+            total_val_macro = 0
+            total_val_micro = 0
+            
+            model.eval()
+            
+            for vg in val_loader:
+                
+                vg = vg.to(device)
+        
+                with torch.no_grad():
+                    val_n_scores = model(vg)
+                    val_n_loss = compute_crossentropy_loss(val_n_scores, vg.y,device)
+                    val_tot_loss = val_n_loss 
+                    val_macro, val_micro = get_f1(val_n_scores, vg.y)
+                    
+                total_val_loss += val_tot_loss
+                total_val_macro += val_macro
+                total_val_micro += val_micro
+                
+            avg_val_loss = total_val_loss / len(val_loader)
+            avg_val_micro = total_val_macro / len(val_loader)
+            avg_val_macro = total_val_micro / len(val_loader)    
+                
+            if cfg_train.verbose:
+                print("Epoch {:05d} | TrainLoss {:.4f} | TrainF1-MACRO {:.4f} | ValLoss {:.4f} | ValF1-MACRO {:.4f} |"
+                .format(epoch, avg_train_loss, avg_train_macro, avg_val_loss, avg_val_macro))
+                
+            writer.add_scalars('LOSS', {'train': avg_train_loss, 'val': avg_val_loss}, epoch)
+            writer.add_scalars('LOSS_DIFF', {'value': avg_val_loss - avg_train_loss}, epoch)
+            writer.add_scalar('LR', optimizer.param_groups[0]['lr'], epoch)
+                
+            ss = stopper.step(avg_val_loss)
+
+            if ss == 'stop':
+                break
+            
+            scheduler.step()
+
+    else:
+        ################* SKIP TRAINING ################
+        print("\n### SKIP TRAINING ###")
+        print(f"-> loading {args.weights}")
+        models = args.weights
+    
+    ################* STEP 3: TESTING ################
+    print("\n### TESTING ###")
+
+    #? test
+    test_data = Document2Graph(name='REMITTANCE TEST', src_path=REMITTANCE_TEST, device = device, output_dir=TEST_SAMPLES)
+    test_data.get_info()
+    test_loader = GDataLoader(test_data, batch_size=len(test_data), shuffle=False)
+    
+    for test_graph in test_loader:
+        break
+
+    m = train_name+'.pt'
+    model = sm.get_model(test_data.get_nclasses(), test_data.get_efeatures_size(), test_data.get_chunks())
+    model.load_state_dict(torch.load(CHECKPOINTS / m))
+    
+    model.eval()
+    with torch.no_grad():
+        n = model(test_graph)
+        _, npreds_all = torch.max(F.softmax(n, dim=1), dim=1)
+
+        macro, micro = get_f1(n, test_graph.y)
+        f1_per_class = get_f1(n, test_graph.y, per_class=True)
+        f1_per_class = {test_data.node_unique_labels[i]:f1_per_class[i] for i in range(len(test_data.node_unique_labels))}
+        print(f'f1_per_class: {f1_per_class}')
+
+    ################* STEP 3.5: VISUALIZATION ##########
+    start_ind=0
+    npreds_all = npreds_all.cpu().detach()
+    for graph in test_data:
+        n_nodes = graph.x.shape[0]
+        img_path = graph.path
+        img_name = os.path.basename(img_path)
+        inference = Image.open(img_path).convert('RGB')
+        size = inference.size
+        
+        npreds = npreds_all[start_ind:start_ind+n_nodes]
+        start_ind+=n_nodes
+        arr = npreds.numpy()
+        li = list(np.where(arr>=0)[0]) 
+        
+        labels = [test_data.node_unique_labels[arr[i]] for i in li]
+        boxes = list(graph['geom'].numpy())
+        boxes = [unnormalize_box(box, size[0], size[1]) for box in boxes]
+        entities =  [boxes[i] for i in li]
+        
+        inference = draw_boxes(inference, entities, labels)
+        inference.save(test_data.output_dir / img_name)
+        
+    ################* STEP 4: RESULTS ################
+    print("\n### RESULTS {} ###".format(m))
+    print("F1 Nodes: Macro {:.4f} - Micro {:.4f}".format(macro, micro))
+
+    if not args.test:
+        feat_n, feat_e = get_features(args)
+        #? if skipping training, no need to save anything
+        model = get_config(CFGM / args.model)
+        results = {'MODEL': {
+            'name': sm.get_name(),
+            'weights': m,
+            'net-params': sm.get_total_params(), 
+            'num-layers': model.num_layers,
+            'projector-output': model.hidden_dim,
             'dropout': model.dropout,
             'lastFC': model.hidden_dim
             },
@@ -311,6 +533,8 @@ def train_remittance(args):
 
     if args.model == 'e2e':
         e2e(args)
+    elif args.model == 'gat':
+        gat(args)
     else:
         raise Exception("Model selected does not exists. Choose 'e2e' or 'edge'.")
     return

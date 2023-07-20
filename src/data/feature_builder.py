@@ -27,6 +27,7 @@ class FeatureBuilder():
         self.cfg_preprocessing = get_config('preprocessing')
         self.device = d
         self.add_geom = self.cfg_preprocessing.FEATURES.add_geom
+        self.add_epolar = self.cfg_preprocessing.FEATURES.add_epolar
         self.add_size = self.cfg_preprocessing.FEATURES.add_size
         self.add_embs = self.cfg_preprocessing.FEATURES.add_embs
         self.add_hist = self.cfg_preprocessing.FEATURES.add_hist
@@ -67,6 +68,7 @@ class FeatureBuilder():
             chunks = []
             
             box_height = [box[3]-box[1] for box in geom]
+            # m = 1
             m = np.median(box_height)
             # m = sqrt((size[0]*size[0] + size[1]*size[1]))
 
@@ -75,25 +77,28 @@ class FeatureBuilder():
                 
                 # TODO add 2d encoding like "LayoutLM*"
                 # [feats[idx].extend(self.sg(box, size)) for idx, box in enumerate(features['boxs'][id])]
-                [feats[idx].extend(box) for idx, box in enumerate(geom)]
+                _ = [feats[idx].extend(box) for idx, box in enumerate(geom)]
                 chunks.append(4)
                 
             if self.add_size:
                 
-                [feats[idx].extend([box[2]-box[0],box[3]-box[1]]) for idx, box in enumerate(geom)]
+                _ = [feats[idx].extend([
+                    (box[2]-box[0])/m,
+                    (box[3]-box[1])/m
+                    ]) for idx, box in enumerate(geom)]
                 chunks.append(2)
             
             # HISTOGRAM OF TEXT
             if self.add_hist:
                 
-                [feats[idx].extend(hist) for idx, hist in enumerate(get_histogram(features['texts'][id]))]
+                _ = [feats[idx].extend(hist) for idx, hist in enumerate(get_histogram(features['texts'][id]))]
                 chunks.append(4)
             
             # textual features
             if self.add_embs:
                 
                 # LANGUAGE MODEL (SPACY)
-                [feats[idx].extend(self.text_embedder(features['texts'][id][idx]).vector) for idx, _ in enumerate(feats)]
+                _ = [feats[idx].extend(self.text_embedder(features['texts'][id][idx]).vector) for idx, _ in enumerate(feats)]
                 chunks.append(len(self.text_embedder(features['texts'][id][0]).vector))
             
             # visual features
@@ -116,46 +121,66 @@ class FeatureBuilder():
                 h = torch.cat(h, dim=1)
 
                 # VISUAL FEATURES (RESNET-IMAGENET)
-                [feats[idx].extend(torch.flatten(h[idx]).tolist()) for idx, _ in enumerate(feats)]
+                _ = [feats[idx].extend(torch.flatten(h[idx]).tolist()) for idx, _ in enumerate(feats)]
                 chunks.append(len(torch.flatten(h[0]).tolist()))
         
-            if self.add_eweights:
+            distances = ([0.0 for _ in range(g.number_of_edges())])
+            m = 1
+                
+            if self.add_epolar:
                 u, v = g.edges()
                 srcs, dsts =  u.tolist(), v.tolist()
-                distances1 = []
                 sin1 = []
                 cos1 = []
-                distances2 = []
                 sin2 = []
                 cos2 = []
 
-                # TODO CHOOSE WHICH DISTANCE NORMALIZATION TO APPLY
-                #! with fully connected simply normalized with max distance between distances
-                # parable = lambda x : (-x+1)**4
-                
                 for pair in zip(srcs, dsts):
-                    d1, s1, c1, d2, s2, c2   = polar2(features['boxs'][id][pair[0]], features['boxs'][id][pair[1]])
-                    distances1.append(d1)
+                    s1, c1, s2, c2   = polar2(features['boxs'][id][pair[0]], features['boxs'][id][pair[1]])
                     sin1.append(s1)
                     cos1.append(c1)
-                    distances2.append(d2)
                     sin2.append(s2)
                     cos2.append(c2)
                 
-                distances = [0.5*(d1+d2) for d1,d2 in zip(distances1,distances2)]
-                max_distances = max(distances)
-                
-                distances1 = [d/m for d in distances1]
-                distances2 = [d/m for d in distances2]
-                polar_coordinates = to_bin2(distances1,sin1,cos1,distances2,sin2,cos2)
-                g.edata['feat'] = polar_coordinates
+                g.edata['feat'] = torch.tensor([sin1,cos1,sin2,cos2],dtype=torch.float32).t()
 
-            else:
-                distances = ([0.0 for _ in range(g.number_of_edges())])
-                m = 1
+            elif self.add_eweights:
+                u, v = g.edges()
+                # srcs, dsts =  u.tolist(), v.tolist()
+                # distances1 = []
+                # sin1 = []
+                # cos1 = []
+                # distances2 = []
+                # sin2 = []
+                # cos2 = []
+
+                # # TODO CHOOSE WHICH DISTANCE NORMALIZATION TO APPLY
+                # #! with fully connected simply normalized with max distance between distances
+                # # parable = lambda x : (-x+1)**4
+                
+                # for pair in zip(srcs, dsts):
+                #     d1, s1, c1, d2, s2, c2   = polar2(features['boxs'][id][pair[0]], features['boxs'][id][pair[1]])
+                #     distances1.append(d1)
+                #     sin1.append(s1)
+                #     cos1.append(c1)
+                #     distances2.append(d2)
+                #     sin2.append(s2)
+                #     cos2.append(c2)
+                
+                # distances = [0.5*(d1+d2) for d1,d2 in zip(distances1,distances2)]
+                # max_distances = max(distances)
+                
+                # distances1 = [d/m for d in distances1]
+                # distances2 = [d/m for d in distances2]
+                # polar_coordinates = to_bin2(distances1,sin1,cos1,distances2,sin2,cos2)
+                # g.edata['feat'] = polar_coordinates
 
             g.ndata['geom'] = torch.tensor(geom, dtype=torch.float32)
             g.ndata['feat'] = torch.tensor(feats, dtype=torch.float32)
+
+
+
+
 
             distances = torch.tensor([(1-d/m) for d in distances], dtype=torch.float32)
             tresh_dist = torch.where(distances > 0.9, torch.full_like(distances, 0.1), torch.zeros_like(distances))
@@ -199,6 +224,7 @@ class FeatureBuilder():
                 -> visual feats: {self.add_visual}\n \
                 -> geom feats: {self.add_geom}\n \
                 -> size feats: {self.add_size}\n \
+                -> edge epolar: {self.add_epolar}\n \
                 -> edge feats: {self.add_eweights}")
 
     
