@@ -475,7 +475,7 @@ def gat(args):
         npreds = npreds_all[start_ind:start_ind+n_nodes]
         start_ind+=n_nodes
         arr = npreds.numpy()
-        li = list(np.where(arr>=0)[0]) 
+        li = list(np.where(arr>0)[0]) 
         
         labels = [test_data.node_unique_labels[arr[i]] for i in li]
         boxes = list(graph['geom'].numpy())
