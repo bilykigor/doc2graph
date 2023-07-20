@@ -497,13 +497,10 @@ def gat(args):
             'name': sm.get_name(),
             'weights': m,
             'net-params': sm.get_total_params(),
-            'nclasses': model.nclasses,
-            'num_edge_features': model.num_edge_features,
-            'in_chunks': model.in_chunks,
-            'num-layers': model.num_layers,
-            'projector-output': model.hidden_dim,
-            'dropout': model.dropout,
-            'lastFC': model.hidden_dim
+            'nclasses': m.nclasses,
+            'num_edge_features': m.num_edge_features,
+            'in_chunks': m.in_chunks,
+            'config': model
             },
             'FEATURES': {
                 'nodes': feat_n, 
