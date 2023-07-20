@@ -4,6 +4,26 @@ import cv2
 import numpy as np
 import torch
 import math
+import torchvision.ops.boxes as bops
+
+
+def intersectoin_by_axis(axis: str, rect_src : list, rect_dst : list):
+        #making same x coordinates
+    if axis=='x':
+        rect_dst[0]=rect_dst[0]
+        rect_dst[2]=rect_dst[2]
+    else:
+        rect_dst[1]=rect_dst[1]
+        rect_dst[3]=rect_dst[3]
+    
+    area = bops.box_iou(torch.tensor([rect_dst], dtype=torch.float), torch.tensor([rect_dst], dtype=torch.float))
+    area_A = bops.box_area(torch.tensor([rect_dst], dtype=torch.float))
+    area_B = bops.box_area(torch.tensor([rect_dst], dtype=torch.float))
+    
+    res = area/(1+area)*(area_A+area_B)
+    area = res/min([area_A,area_B])
+    
+    return area
 
 
 def polar(rect_src : list, rect_dst : list):

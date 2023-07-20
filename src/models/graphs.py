@@ -210,6 +210,10 @@ class GAT(nn.Module):
 
         super().__init__()
         
+        self.nclasses = node_classes
+        self.num_edge_features = num_edge_features
+        self.in_chunks = in_chunks
+        
         self.drop = nn.Dropout(dropout)
 
         # Project inputs into higher space

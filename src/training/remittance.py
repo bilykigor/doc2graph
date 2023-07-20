@@ -496,7 +496,10 @@ def gat(args):
         results = {'MODEL': {
             'name': sm.get_name(),
             'weights': m,
-            'net-params': sm.get_total_params(), 
+            'net-params': sm.get_total_params(),
+            'nclasses': model.nclasses,
+            'num_edge_features': model.num_edge_features,
+            'in_chunks': model.in_chunks,
             'num-layers': model.num_layers,
             'projector-output': model.hidden_dim,
             'dropout': model.dropout,
@@ -506,11 +509,7 @@ def gat(args):
                 'nodes': feat_n, 
                 'edges': feat_e
             },
-            'PARAMS': {
-                'start-lr': cfg_train.lr,
-                'weight-decay': cfg_train.weight_decay,
-                'seed': cfg_train.seed
-            },
+            'PARAMS': cfg_train,
             'RESULTS': {
                 'val-loss': stopper.best_score.cpu().detach().numpy().tolist(), 
                 #'f1-scores': f1,
