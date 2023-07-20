@@ -492,7 +492,7 @@ def gat(args):
     if not args.test:
         feat_n, feat_e = get_features(args)
         #? if skipping training, no need to save anything
-        model = get_config(CFGM / args.model)
+        model_cfg = get_config(CFGM / args.model)
         results = {'MODEL': {
             'name': sm.get_name(),
             'weights': m,
@@ -500,7 +500,7 @@ def gat(args):
             'nclasses': m.nclasses,
             'num_edge_features': m.num_edge_features,
             'in_chunks': m.in_chunks,
-            'config': model
+            'config': model_cfg
             },
             'FEATURES': {
                 'nodes': feat_n, 
