@@ -4,11 +4,24 @@ import cv2
 import numpy as np
 import torch
 import math
+# import re
+# from nltk.tokenize import word_tokenize
+# from price_parser import Price
+# import dateparser
 #import torchvision.ops.boxes as bops
 
 
 def intersectoin_by_axis(axis: str, rect_src : list, rect_dst : list):
         #making same x coordinates
+    if  rect_src[0]==rect_src[2]:
+        return 0   
+    if  rect_src[1]==rect_src[3]:
+        return 0 
+    if  rect_dst[0]==rect_dst[2]:
+        return 0   
+    if  rect_dst[1]==rect_dst[3]:
+        return 0   
+        
     if axis=='x':
         if min(rect_src[3],rect_dst[3]) <= max(rect_dst[1],rect_src[1]):
             return 0
@@ -46,7 +59,6 @@ def intersectoin_by_axis(axis: str, rect_src : list, rect_dst : list):
         raise
     
     return area
-
 
 def polar(rect_src : list, rect_dst : list):
     """Compute distance and angle from src to dst bounding boxes (poolar coordinates considering the src as the center)
@@ -258,7 +270,6 @@ def to_bin(dist :int, angle : int, b=8):
 
     return torch.cat([torch.tensor(new_dist, dtype=torch.float32), torch.tensor(new_angle, dtype=torch.float32)], dim=1)
 
-
 def to_bin2(d1,s1,c1,d2,s2,c2):
     return torch.cat([torch.tensor(d1, dtype=torch.float32).unsqueeze(1), 
                       torch.tensor(s1, dtype=torch.float32).unsqueeze(1),
@@ -267,3 +278,149 @@ def to_bin2(d1,s1,c1,d2,s2,c2):
                       torch.tensor(s2, dtype=torch.float32).unsqueeze(1),
                       torch.tensor(c2, dtype=torch.float32).unsqueeze(1)
                       ], dim=1)
+
+# def remove_stop_words(text):
+#     "remove_stop_words from payment description"
+#     stop_words = [
+#         "pay",
+#         r"\w*payment\w*",
+#         r"\w*payable\w*",
+#         r"\w*paymnt\w*",
+#         "ccd",
+#         "ctx",
+#         "ppd",
+#         "ach",
+#         r"transfer\w*",
+#         "corp",
+#         "corporation",
+#         "inc",
+#         "llc",
+#         "pmt",
+#         r"\w*pymnt\w*",
+#         ",",
+#         "\.",
+#         "\)",
+#         "\(",
+#         "-",
+#         "com",
+#     ]
+
+#     for word in stop_words:
+#         matched = re.search(rf"\b{word}\W*(\b|$)", text)
+#         while matched:
+#             start, stop = matched.span()
+#             text = text[0:start] + " " + text[stop:]
+#             matched = re.search(rf"\b{word}\W*(\b|$)", text)
+
+#     text = " ".join(text.strip().split())
+
+#     return text
+
+# def get_mask_tokens(text, mask, min_length=0):
+#     "find tokens in text that match with mask"
+#     candidates = list(
+#         {
+#                 token
+#                 for token in word_tokenize(text.lower())
+#                 if re.match(mask, token)
+#                 and re.match(mask, token).span() == (0, len(token))
+#         }
+#     )
+
+#     candidates = [x for x in candidates if len(x)>min_length]
+
+#     return candidates
+
+# def find_amounts(text):
+#     text = text.lower().strip()
+#     currencies = r'(?:\$|€|£|¥|eur|usd|gbp|\u20AC|s|S)?'
+#     mask_1 = r'(([1-9]\d+|0)[,.]\d{1,3})' #0,12123; 0.321233
+#     mask_2 = r'[1-9]\d{0,2}(?:([,])\d{3})?(?:\1\d{3})*([.]\d{1,3})' #1,321,233.23
+#     mask_3 = r'[1-9]\d{0,2}(?:([.])\d{3})?(?:\1\d{3})*([,]\d{1,3})' #1,321,233.23
+#     amount_candidates_1 = set(get_mask_tokens(text, f'{currencies}-?{mask_1}'))
+#     amount_candidates_2 = set(get_mask_tokens(text, f'{currencies}-?{mask_2}'))
+#     amount_candidates_3 = set(get_mask_tokens(text, f'{currencies}-?{mask_3}'))
+#     amount_candidates = list(amount_candidates_1.union(amount_candidates_2).union(amount_candidates_3))
+    
+#     if amount_candidates:
+#         return True
+#     return False
+
+# def find_codes(text):
+#     text = text.lower().strip()
+#     mask = r"#?([a-z]+-?)*\d+[-a-z\d]*"
+#     mt = re.match(mask, text)
+#     if mt:
+#         if mt.span() == (0, len(text)):
+#             return True
+#     return False
+
+# def find_numbers(text):
+#     text = text.lower().strip()
+    
+#     return text.isdigit()
+
+# def find_dates(s):
+#     s = s.lower().strip()
+#     chunks = re.findall(r'\d+|[A-Za-z]+|\W+', s)
+#     if len(chunks)>5:
+#         return False
+        
+#     digit_chunks = [x for x in chunks if x.isdigit()]
+#     if len(digit_chunks)>3:
+#         return False
+    
+#     word_chunks = [x for x in chunks if x.isalpha()]
+#     if len(word_chunks)>1:
+#         return False
+    
+#     other_chunks = [x for x in chunks if not (x.isalpha() or x.isdigit())]
+#     if len(other_chunks)>2:
+#         return False
+    
+#     for oc in other_chunks:
+#         if oc.strip() not in ['.','','/','-',',',' ']:
+#             return False
+    
+#     if word_chunks:
+#         if word_chunks[0] not in ['jan','feb','mar','apr','may','jun','jul','aug','sep','oct','nov','dec','january','february','march','april','may','june','july','august','september','october','november','december']:
+#             return False
+        
+#         if len(digit_chunks)!=2:
+#             return False
+        
+#         if int(digit_chunks[0]) not in range(1,32):
+#             return False
+        
+#         if len(digit_chunks[1]) not in [1,2,4]:
+#             return False
+#     else:
+#         if len(digit_chunks)!=3:
+#             return False
+        
+#         if int(digit_chunks[1]) not in range(1,32):
+#             return False
+        
+#         second_day = 32
+#         if int(digit_chunks[1]) in range(13,32):
+#             second_day = 13
+        
+#         if len(digit_chunks[0]) not in [1,2,4]:
+#             return False
+        
+#         if len(digit_chunks[2]) not in [1,2,4]:
+#             return False
+        
+#         if (len(digit_chunks[0])==4) and (len(digit_chunks[2])==4):
+#             return False
+        
+#         if len(digit_chunks[0]) in [1,2]:
+#             if int(digit_chunks[0]) not in range(1,second_day):
+#                 return False
+        
+#         if len(digit_chunks[0])==4:
+#             if int(digit_chunks[2]) not in range(1,second_day):
+#                 return False
+            
+#     return True
+
