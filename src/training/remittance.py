@@ -497,9 +497,9 @@ def gat(args):
             'name': sm.get_name(),
             'weights': m,
             'net-params': sm.get_total_params(),
-            'nclasses': m.nclasses,
-            'num_edge_features': m.num_edge_features,
-            'in_chunks': m.in_chunks,
+            'nclasses': model.nclasses,
+            'num_edge_features': model.num_edge_features,
+            'in_chunks': model.in_chunks,
             'config': model_cfg
             },
             'FEATURES': {

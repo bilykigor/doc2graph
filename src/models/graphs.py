@@ -60,7 +60,7 @@ class SetModel():
         
         elif self.name == 'GAT':
             edge_pred_features = int((math.log2(get_config('preprocessing').FEATURES.num_polar_bins) + nodes)*2)
-            m = GAT(nodes, edges, self.cfg_model.n_heads, self.cfg_model.dropout, chunks, self.cfg_model.hidden_dim, self.device,  edge_pred_features, self.cfg_model.doProject)
+            m = GAT(nodes, edges, self.cfg_model.n_heads, self.cfg_model.dropout, chunks, self.cfg_model.node_projector_dim, self.cfg_model.edge_projector_dim, self.device,  edge_pred_features, self.cfg_model.doProject)
 
         else:
             raise Exception(f"Error! Model {self.name} do not exists.")
@@ -203,7 +203,8 @@ class GAT(nn.Module):
                        n_heads, 
                        dropout, 
                        in_chunks, 
-                       hidden_dim, 
+                       node_projector_dim, 
+                       edge_projector_dim,
                        device,
                        edge_pred_features,
                        doProject=True):
@@ -217,12 +218,13 @@ class GAT(nn.Module):
         self.drop = nn.Dropout(dropout)
 
         # Project inputs into higher space
-        self.projector = InputProjector(in_chunks, hidden_dim, device, doProject, dropout)
+        self.node_projector = InputProjector(in_chunks, node_projector_dim, device, doProject, dropout)
+        self.edge_projector = InputProjector([num_edge_features], edge_projector_dim, device, doProject, dropout)
 
         # Perform message passing
-        m_hidden = hidden_dim #self.projector.get_out_lenght()
+        m_hidden = self.node_projector.get_out_lenght()
         
-        self.message_passing = GATConv(m_hidden, m_hidden, edge_dim = num_edge_features, heads=n_heads)
+        self.message_passing = GATConv(m_hidden, m_hidden, edge_dim = edge_projector_dim, heads=n_heads)
 
         # Define edge predictor layer
         #self.edge_pred = MLPPredictor_E2E(m_hidden, hidden_dim, edge_classes, dropout,  edge_pred_features)
@@ -237,9 +239,10 @@ class GAT(nn.Module):
     def forward(self, data):
         x, edge_index, edge_attr = data.x, data.edge_index, data.edge_attr
         
-        x = self.projector(x)
+        x = self.node_projector(x)
+        e = self.edge_projector(edge_attr)
         
-        x = self.message_passing(x, edge_index, edge_attr=edge_attr)
+        x = self.message_passing(x, edge_index, edge_attr=e)
         x = F.relu(x)
         x = self.drop(x)
 
