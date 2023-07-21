@@ -10,7 +10,7 @@ import math
 def intersectoin_by_axis(axis: str, rect_src : list, rect_dst : list):
         #making same x coordinates
     if axis=='x':
-        if min(rect_src[3],rect_dst[3]) < max(rect_dst[1],rect_src[1]):
+        if min(rect_src[3],rect_dst[3]) <= max(rect_dst[1],rect_src[1]):
             return 0
         
         rect_dst[0]=rect_src[0]
@@ -21,7 +21,7 @@ def intersectoin_by_axis(axis: str, rect_src : list, rect_dst : list):
             
         res = w*h
     else:
-        if min(rect_src[2],rect_dst[2]) < max(rect_dst[0],rect_src[0]):
+        if min(rect_src[2],rect_dst[2]) <= max(rect_dst[0],rect_src[0]):
             return 0
         
         rect_dst[1]=rect_src[1]
@@ -39,6 +39,8 @@ def intersectoin_by_axis(axis: str, rect_src : list, rect_dst : list):
     # area_B = bops.box_area(torch.tensor([rect_src], dtype=torch.float))
     
     #res = area/(1+area)*(area_A+area_B)
+    if min([area_A,area_B])==0:
+        print([area_A,area_B])
     area = res/min([area_A,area_B])
     
     return area
