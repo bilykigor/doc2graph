@@ -495,7 +495,7 @@ class GraphBuilder():
                 
                 #size = Image.open(img_path).size
                 img = cv2.imread(img_path)
-                size2 = (img.shape[1],img.shape[0])
+                size = (img.shape[1],img.shape[0])
 
                 with open(os.path.join(src, 'layoutlm_annotations', file), 'r') as f:
                     form = json.load(f)
