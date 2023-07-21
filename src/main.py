@@ -27,8 +27,10 @@ def main():
                         help="add histogram of contents to nodes")
     parser.add_argument('--add-visual', '-addV', action="store_true",
                         help="add visual features to nodes")
-    parser.add_argument('--add-eweights', '-addE', action="store_true",
-                        help="add edge features to graphs")
+    parser.add_argument('--add-edist', '-addED', action="store_true",
+                        help="add edge distances to graphs")
+    parser.add_argument('--add-eshared', '-addES', action="store_true",
+                        help="add intersection of boxes to graphs")
     # data
     parser.add_argument("--src-data", type=str, default='FUNSD',
                         help="which data source to use. It can be FUNSD, PAU or CUSTOM")

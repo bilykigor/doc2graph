@@ -4,23 +4,41 @@ import cv2
 import numpy as np
 import torch
 import math
-import torchvision.ops.boxes as bops
+#import torchvision.ops.boxes as bops
 
 
 def intersectoin_by_axis(axis: str, rect_src : list, rect_dst : list):
         #making same x coordinates
     if axis=='x':
-        rect_dst[0]=rect_dst[0]
-        rect_dst[2]=rect_dst[2]
+        if min(rect_src[3],rect_dst[3]) < max(rect_dst[1],rect_src[1]):
+            return 0
+        
+        rect_dst[0]=rect_src[0]
+        rect_dst[2]=rect_src[2]
+        
+        w = rect_dst[2] - rect_dst[0]
+        h = min(rect_src[3],rect_dst[3]) - max(rect_dst[1],rect_src[1])
+            
+        res = w*h
     else:
-        rect_dst[1]=rect_dst[1]
-        rect_dst[3]=rect_dst[3]
+        if min(rect_src[2],rect_dst[2]) < max(rect_dst[0],rect_src[0]):
+            return 0
+        
+        rect_dst[1]=rect_src[1]
+        rect_dst[3]=rect_src[3]
+        
+        h = rect_dst[3] - rect_dst[1]
+        w = min(rect_src[2],rect_dst[2]) - max(rect_dst[0],rect_src[0])
+        res = w*h
+        
+    area_A = (rect_dst[3]-rect_dst[1])*(rect_dst[2]-rect_dst[0])
+    area_B = (rect_src[3]-rect_src[1])*(rect_src[2]-rect_src[0])
     
-    area = bops.box_iou(torch.tensor([rect_dst], dtype=torch.float), torch.tensor([rect_dst], dtype=torch.float))
-    area_A = bops.box_area(torch.tensor([rect_dst], dtype=torch.float))
-    area_B = bops.box_area(torch.tensor([rect_dst], dtype=torch.float))
+    # area = bops.box_iou(torch.tensor([rect_dst], dtype=torch.float), torch.tensor([rect_src], dtype=torch.float))
+    # area_A = bops.box_area(torch.tensor([rect_dst], dtype=torch.float))
+    # area_B = bops.box_area(torch.tensor([rect_src], dtype=torch.float))
     
-    res = area/(1+area)*(area_A+area_B)
+    #res = area/(1+area)*(area_A+area_B)
     area = res/min([area_A,area_B])
     
     return area
@@ -112,6 +130,19 @@ def polar2(rect_src : list, rect_dst : list):
         cos2  = a2/d2
     
     return sin1, cos1, sin2, cos2  
+
+def polar3(rect_src : list, rect_dst : list):
+    
+    x0_src, y0_src, x1_src, y1_src = rect_src
+    x0_dst, y0_dst, x1_dst, y1_dst = rect_dst
+    
+    a1, b1 = (x0_dst - x0_src), (y0_dst - y0_src)
+    d1 = sqrt(a1**2 + b1**2)
+    
+    a2, b2 = (x1_dst - x1_src), (y1_dst - y1_src)
+    d2 = sqrt(a2**2 + b2**2)
+    
+    return d1,d2 
 
 def transform_image(img_path : str, scale_image=1.0):
     """ Transform image to torch.Tensor

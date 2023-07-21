@@ -12,7 +12,7 @@ import torchvision.transforms.functional as tvF
 from src.paths import CHECKPOINTS
 from src.models.unet import Unet
 from src.data.utils import to_bin, to_bin2
-from src.data.utils import polar, get_histogram, polar2
+from src.data.utils import polar, get_histogram, polar2, polar3, intersectoin_by_axis
 from src.utils import get_config
 from src.data.preprocessing import normalize_box
 
@@ -32,7 +32,8 @@ class FeatureBuilder():
         self.add_embs = self.cfg_preprocessing.FEATURES.add_embs
         self.add_hist = self.cfg_preprocessing.FEATURES.add_hist
         self.add_visual = self.cfg_preprocessing.FEATURES.add_visual
-        self.add_eweights = self.cfg_preprocessing.FEATURES.add_eweights
+        self.add_edist = self.cfg_preprocessing.FEATURES.add_edist
+        self.add_eshared = self.cfg_preprocessing.FEATURES.add_eshared
         self.add_fudge = self.cfg_preprocessing.FEATURES.add_fudge
         self.num_polar_bins = self.cfg_preprocessing.FEATURES.num_polar_bins
 
@@ -62,14 +63,15 @@ class FeatureBuilder():
 
             # positional features
             size = Image.open(features['paths'][id]).size
-            feats = [[] for _ in range(len(features['boxs'][id]))]
+            feats = [[] for _ in range(g.num_nodes())]
+            efeats = [[] for _ in range(g.num_edges())]
             #geom = [self.sg(box, size) for box in features['boxs'][id]]
             geom = [normalize_box(box, size[0], size[1]) for box in features['boxs'][id]]
             chunks = []
             
             box_height = [box[3]-box[1] for box in geom]
             # m = 1
-            m = np.median(box_height)
+            med_height = np.median(box_height)
             # m = sqrt((size[0]*size[0] + size[1]*size[1]))
 
             # 'geometrical' features
@@ -124,9 +126,6 @@ class FeatureBuilder():
                 _ = [feats[idx].extend(torch.flatten(h[idx]).tolist()) for idx, _ in enumerate(feats)]
                 chunks.append(len(torch.flatten(h[0]).tolist()))
         
-            distances = ([0.0 for _ in range(g.number_of_edges())])
-            m = 1
-                
             if self.add_epolar:
                 u, v = g.edges()
                 srcs, dsts =  u.tolist(), v.tolist()
@@ -136,52 +135,48 @@ class FeatureBuilder():
                 cos2 = []
 
                 for pair in zip(srcs, dsts):
-                    s1, c1, s2, c2   = polar2(features['boxs'][id][pair[0]], features['boxs'][id][pair[1]])
+                    s1, c1, s2, c2   = polar2(geom[pair[0]], geom[pair[1]])
                     sin1.append(s1)
                     cos1.append(c1)
                     sin2.append(s2)
                     cos2.append(c2)
                 
-                g.edata['feat'] = torch.tensor([sin1,cos1,sin2,cos2],dtype=torch.float32).t()
+                _ = [efeats[idx].extend([sin1[idx],cos1[idx],sin2[idx],cos2[idx]]) for idx, _ in enumerate(efeats)]
 
-            elif self.add_eweights:
+            if self.add_edist:
                 u, v = g.edges()
-                # srcs, dsts =  u.tolist(), v.tolist()
-                # distances1 = []
-                # sin1 = []
-                # cos1 = []
-                # distances2 = []
-                # sin2 = []
-                # cos2 = []
+                srcs, dsts =  u.tolist(), v.tolist()
+                distances1 = []
+                distances2 = []
 
-                # # TODO CHOOSE WHICH DISTANCE NORMALIZATION TO APPLY
-                # #! with fully connected simply normalized with max distance between distances
-                # # parable = lambda x : (-x+1)**4
+                for pair in zip(srcs, dsts):
+                    d1, d2   = polar3(geom[pair[0]], geom[pair[1]])
+                    distances1.append(d1/med_height)
+                    distances2.append(d2/med_height)
                 
-                # for pair in zip(srcs, dsts):
-                #     d1, s1, c1, d2, s2, c2   = polar2(features['boxs'][id][pair[0]], features['boxs'][id][pair[1]])
-                #     distances1.append(d1)
-                #     sin1.append(s1)
-                #     cos1.append(c1)
-                #     distances2.append(d2)
-                #     sin2.append(s2)
-                #     cos2.append(c2)
+                _ = [efeats[idx].extend([distances1[idx],distances2[idx]]) for idx, _ in enumerate(efeats)]
                 
-                # distances = [0.5*(d1+d2) for d1,d2 in zip(distances1,distances2)]
-                # max_distances = max(distances)
+            if self.add_eshared:
+                u, v = g.edges()
+                srcs, dsts =  u.tolist(), v.tolist()
+                x_shared = []
+                y_shared = []
+
+                for pair in zip(srcs, dsts):
+                    x = intersectoin_by_axis('x',geom[pair[0]], geom[pair[1]])
+                    y = intersectoin_by_axis('y',geom[pair[0]], geom[pair[1]])
+                    x_shared.append(x)
+                    y_shared.append(y)
                 
-                # distances1 = [d/m for d in distances1]
-                # distances2 = [d/m for d in distances2]
-                # polar_coordinates = to_bin2(distances1,sin1,cos1,distances2,sin2,cos2)
-                # g.edata['feat'] = polar_coordinates
+                _ = [efeats[idx].extend([x_shared[idx],y_shared[idx]]) for idx, _ in enumerate(efeats)]
 
             g.ndata['geom'] = torch.tensor(geom, dtype=torch.float32)
             g.ndata['feat'] = torch.tensor(feats, dtype=torch.float32)
+            g.edata['feat'] = torch.tensor(efeats,dtype=torch.float32)#.t()
 
-
-
-
-
+            #=============================================================
+            distances = ([0.0 for _ in range(g.number_of_edges())])
+            m = 1
             distances = torch.tensor([(1-d/m) for d in distances], dtype=torch.float32)
             tresh_dist = torch.where(distances > 0.9, torch.full_like(distances, 0.1), torch.zeros_like(distances))
             g.edata['weights'] = tresh_dist
@@ -196,7 +191,7 @@ class FeatureBuilder():
 
             #! DEBUG PURPOSES TO VISUALIZE RANDOM GRAPH IMAGE FROM DATASET
             if False:
-                if id == rand_id and self.add_eweights:
+                if id == rand_id and self.add_edist:
                     print("\n\n### EXAMPLE ###")
 
                     img_path = features['paths'][id]
@@ -225,6 +220,6 @@ class FeatureBuilder():
                 -> geom feats: {self.add_geom}\n \
                 -> size feats: {self.add_size}\n \
                 -> edge epolar: {self.add_epolar}\n \
-                -> edge feats: {self.add_eweights}")
+                -> edge edist: {self.add_edist}")
 
     

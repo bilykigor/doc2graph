@@ -9,10 +9,11 @@ LOADER:
     # - CUSTOM
 FEATURES:
   add_embs: true
-  add_eweights: false
+  add_epolar: true
+  add_edist: false
+  add_eshared: false
   add_fudge: false
   add_geom: false
-  add_epolar: true
   add_size: false
   add_hist: false
   add_visual: false

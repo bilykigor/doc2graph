@@ -206,15 +206,17 @@ def get_features(args : ArgumentParser) -> Tuple[str, str]:
     if args.add_size:
         feat_n += 'size+ '
     if args.add_epolar:
-        feat_e = 'polar+ '
+        feat_e += 'polar+ '
     if args.add_embs:
         feat_n += 'text+ '
     if args.add_visual:
         feat_n += 'visual+ '
     if args.add_hist:
         feat_n += 'histogram+ '
-    if args.add_eweights:
-        feat_e = 'eweights+ '
+    if args.add_edist:
+        feat_e += 'edist+ '
+    if args.add_eshared:
+        feat_e += 'eshared+ '
         
     return feat_n, feat_e
 
