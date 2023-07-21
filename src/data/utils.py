@@ -42,7 +42,7 @@ def intersectoin_by_axis(axis: str, rect_src : list, rect_dst : list):
     try:
         area = res/min([area_A,area_B])
     except:
-        print([area_A,area_B])
+        print([rect_src,rect_dst])
         raise
     
     return area
