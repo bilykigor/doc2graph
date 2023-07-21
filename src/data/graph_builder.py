@@ -9,6 +9,7 @@ import numpy as np
 from tqdm import tqdm
 import xml.etree.ElementTree as ET
 import easyocr
+import cv2
 
 from src.data.preprocessing import load_predictions, unnormalize_box
 from src.data.utils import polar
@@ -485,14 +486,16 @@ class GraphBuilder():
         # justOne = random.choice(os.listdir(os.path.join(src, 'adjusted_annotations'))).split(".")[0]
         
         if self.node_granularity == 'gt':
-            files = os.listdir(os.path.join(src, 'layoutlm_annotations'))#[:5]
+            files = os.listdir(os.path.join(src, 'layoutlm_annotations'))[:5]
             for file in tqdm(files, desc='Creating graphs - GT'):
             
                 img_name = f'{file.split(".")[0]}.jpg'
                 img_path = os.path.join(src, 'images', img_name)
                 features['paths'].append(img_path)
                 
-                size = Image.open(img_path).size
+                #size = Image.open(img_path).size
+                img = cv2.imread(img_path)
+                size2 = (img.shape[1],img.shape[0])
 
                 with open(os.path.join(src, 'layoutlm_annotations', file), 'r') as f:
                     form = json.load(f)
