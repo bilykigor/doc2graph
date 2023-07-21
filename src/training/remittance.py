@@ -421,6 +421,7 @@ def gat(args):
                 .format(epoch, avg_train_loss, avg_train_macro, avg_val_loss, avg_val_macro))
                 
             writer.add_scalars('LOSS', {'train': avg_train_loss, 'val': avg_val_loss}, epoch)
+            writer.add_scalars('F1_macro', {'train': avg_train_macro, 'val': avg_val_micro}, epoch)
             writer.add_scalars('LOSS_DIFF', {'value': avg_val_loss - avg_train_loss}, epoch)
             writer.add_scalar('LR', optimizer.param_groups[0]['lr'], epoch)
                 

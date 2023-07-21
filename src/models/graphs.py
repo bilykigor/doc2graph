@@ -214,17 +214,23 @@ class GAT(nn.Module):
         self.nclasses = node_classes
         self.num_edge_features = num_edge_features
         self.in_chunks = in_chunks
+        self.edge_projector_dim = edge_projector_dim
         
         self.drop = nn.Dropout(dropout)
 
         # Project inputs into higher space
         self.node_projector = InputProjector(in_chunks, node_projector_dim, device, doProject, dropout)
-        self.edge_projector = InputProjector([num_edge_features], edge_projector_dim, device, doProject, dropout)
-
+        if self.edge_projector_dim>0:
+            self.edge_projector = InputProjector([num_edge_features], edge_projector_dim, device, doProject, dropout)
+            edge_dim = edge_projector_dim
+        else:
+            edge_dim = num_edge_features
+            
         # Perform message passing
         m_hidden = self.node_projector.get_out_lenght()
         
-        self.message_passing = GATConv(m_hidden, m_hidden, edge_dim = edge_projector_dim, heads=n_heads)
+        
+        self.message_passing = GATConv(m_hidden, m_hidden, edge_dim = edge_dim, heads=n_heads)
 
         # Define edge predictor layer
         #self.edge_pred = MLPPredictor_E2E(m_hidden, hidden_dim, edge_classes, dropout,  edge_pred_features)
@@ -240,7 +246,10 @@ class GAT(nn.Module):
         x, edge_index, edge_attr = data.x, data.edge_index, data.edge_attr
         
         x = self.node_projector(x)
-        e = self.edge_projector(edge_attr)
+        if self.edge_projector_dim>0:
+            e = self.edge_projector(edge_attr)
+        else:
+            e = edge_attr
         
         x = self.message_passing(x, edge_index, edge_attr=e)
         x = F.relu(x)
