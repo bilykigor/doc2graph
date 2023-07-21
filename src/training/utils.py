@@ -60,7 +60,8 @@ class EarlyStopping:
         if self.metric in ['loss','loss_diff']:
             if score > self.best_score:
                 self.counter += 1
-                print(f'    !- Stop Counter {self.counter} / {self.patience}')
+                if self.counter % 10 ==0:
+                    print(f'    !- Stop Counter {self.counter} / {self.patience}')
                 self.early_stop = 'not-improved'
                 if self.counter >= self.patience:
                     self.early_stop = 'stop'
@@ -74,7 +75,8 @@ class EarlyStopping:
         elif self.metric == 'acc':
             if score <= self.best_score:
                 self.counter += 1
-                print(f'    !- Stop Counter {self.counter} / {self.patience}')
+                if self.counter % 10 ==0:
+                    print(f'    !- Stop Counter {self.counter} / {self.patience}')
                 self.early_stop = 'not-improved'
                 if self.counter >= self.patience:
                     self.early_stop = 'stop'
