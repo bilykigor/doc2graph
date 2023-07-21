@@ -39,9 +39,11 @@ def intersectoin_by_axis(axis: str, rect_src : list, rect_dst : list):
     # area_B = bops.box_area(torch.tensor([rect_src], dtype=torch.float))
     
     #res = area/(1+area)*(area_A+area_B)
-    if min([area_A,area_B])==0:
+    try:
+        area = res/min([area_A,area_B])
+    except:
         print([area_A,area_B])
-    area = res/min([area_A,area_B])
+        raise
     
     return area
 
