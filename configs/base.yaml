@@ -10,8 +10,8 @@ LOADER:
 FEATURES:
   add_embs: true
   add_epolar: true
-  add_edist: false
-  add_eshared: false
+  add_edist: true
+  add_eshared: true
   add_fudge: false
   add_geom: false
   add_size: false

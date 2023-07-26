@@ -15,6 +15,7 @@ from src.data.preprocessing import load_predictions, unnormalize_box
 from src.data.utils import polar
 from src.paths import DATA, FUNSD_TEST
 from src.utils import get_config
+from src.data.utils import intersectoin_by_axis
 
 
 class GraphBuilder():
@@ -129,6 +130,46 @@ class GraphBuilder():
             if len(boxes_to_bottom):
                 u.extend([ix]*len(boxes_to_bottom))
                 v.extend(x[0] for x in boxes_to_bottom)
+        
+        return u, v
+    
+    def half_share_connected(self, bboxs : list, min_share=0.1):
+        """ create connected graph with connection allowed only to right and to bottom
+
+        Args:
+            bboxs (list) : list of bounding box coordinates
+        
+        Returns:
+            u, v (lists) : lists of indices
+        """
+        
+        bboxs_with_id = [(ix, box) for ix, box in enumerate(bboxs)]
+        
+        u, v = list(), list()
+        
+        for ix, box in enumerate(bboxs):
+            boxes_to_right = [x for x in bboxs_with_id if x[1][0]+x[1][2]>=box[0]+box[2] and x[0]!=ix]
+            boxes_to_right = [x for x in boxes_to_right if 0.5*(x[1][1]+x[1][3])>=box[1]]
+            
+            boxes_to_right = [x for x in boxes_to_right if intersectoin_by_axis('x',x[1], box)>min_share]
+           
+            if len(boxes_to_right):
+                boxes_to_right = sorted(boxes_to_right,key=lambda x: x[1][0], reverse=False)
+                boxes_to_right = boxes_to_right[:1]
+                #print(boxes_to_right)
+                u.extend([ix]*len(boxes_to_right))
+                v.extend(x[0] for x in boxes_to_right)
+            
+            boxes_to_bottom = [x for x in bboxs_with_id if x[1][1]+x[1][3]>=box[1]+box[3] and x[0]!=ix]
+            boxes_to_bottom = [x for x in boxes_to_bottom if 0.5*(x[1][0]+x[1][2])>=box[0]]
+            
+            boxes_to_bottom = [x for x in boxes_to_bottom if intersectoin_by_axis('y',x[1], box)>min_share]
+            if len(boxes_to_bottom):
+                boxes_to_bottom = sorted(boxes_to_bottom,key=lambda x: x[1][1], reverse=False)
+                boxes_to_bottom = boxes_to_bottom[:1]
+                u.extend([ix]*len(boxes_to_bottom))
+                v.extend(x[0] for x in boxes_to_bottom)
+            #break
         
         return u, v
     
@@ -548,7 +589,8 @@ class GraphBuilder():
                 
                 # getting edges
                 if self.edge_type == 'fully':
-                    u, v = self.fully_connected(range(len(boxs)))
+                    #u, v = self.fully_connected(range(len(boxs)))
+                    u, v = self.half_share_connected(boxs,0.2)
                 elif self.edge_type == 'knn': 
                     u,v = self.knn_connection(Image.open(img_path).size, boxs)
                 else:
