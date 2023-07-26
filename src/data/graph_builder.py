@@ -589,8 +589,8 @@ class GraphBuilder():
                 
                 # getting edges
                 if self.edge_type == 'fully':
-                    #u, v = self.fully_connected(range(len(boxs)))
-                    u, v = self.half_fully_connected(boxs)
+                    u, v = self.fully_connected(range(len(boxs)))
+                    #u, v = self.half_fully_connected(boxs)
                 elif self.edge_type == 'knn': 
                     u,v = self.knn_connection(Image.open(img_path).size, boxs)
                 else:
