@@ -125,8 +125,8 @@ class GraphBuilder():
         u, v = list(), list()
         
         for ix, box in enumerate(bboxs):
-            boxes_to_right = [x for x in bboxs_with_id if x[1][2]>=box[0]]
-            boxes_to_bottom = [x for x in boxes_to_right if x[1][3]>=box[1]]
+            boxes_to_right = [x for x in bboxs_with_id if x[1][0]+x[1][2]>=box[0]+box[2] and x[0]!=ix]
+            boxes_to_bottom = [x for x in boxes_to_right if x[1][1]+x[1][3]>=box[1]+box[3] and x[0]!=ix]
             if len(boxes_to_bottom):
                 u.extend([ix]*len(boxes_to_bottom))
                 v.extend(x[0] for x in boxes_to_bottom)
@@ -590,7 +590,7 @@ class GraphBuilder():
                 # getting edges
                 if self.edge_type == 'fully':
                     #u, v = self.fully_connected(range(len(boxs)))
-                    u, v = self.half_share_connected(boxs,0.2)
+                    u, v = self.half_fully_connected(boxs)
                 elif self.edge_type == 'knn': 
                     u,v = self.knn_connection(Image.open(img_path).size, boxs)
                 else:
