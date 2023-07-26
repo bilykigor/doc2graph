@@ -230,7 +230,7 @@ class GAT(nn.Module):
         m_hidden = self.node_projector.get_out_lenght()
         
         
-        self.message_passing = GATConv(m_hidden, m_hidden, edge_dim = edge_dim, heads=n_heads)
+        self.message_passing = GATConv(m_hidden, m_hidden, edge_dim = edge_dim, heads=n_heads, dropout = dropout, v2 = True)
 
         # Define edge predictor layer
         #self.edge_pred = MLPPredictor_E2E(m_hidden, hidden_dim, edge_classes, dropout,  edge_pred_features)

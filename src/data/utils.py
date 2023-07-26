@@ -13,6 +13,9 @@ import math
 
 def intersectoin_by_axis(axis: str, rect_src : list, rect_dst : list):
         #making same x coordinates
+    rect_src = rect_src.copy()
+    rect_dst = rect_dst.copy()
+    
     if  rect_src[0]==rect_src[2]:
         return 0   
     if  rect_src[1]==rect_src[3]:
