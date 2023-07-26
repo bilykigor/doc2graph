@@ -236,10 +236,18 @@ class GAT(nn.Module):
         #self.edge_pred = MLPPredictor_E2E(m_hidden, hidden_dim, edge_classes, dropout,  edge_pred_features)
 
         # Define node predictor layer
-        node_pred = []
-        node_pred.append(nn.Linear(n_heads*m_hidden, node_classes))
-        node_pred.append(nn.LayerNorm(node_classes))
-        self.node_pred = nn.Sequential(*node_pred)
+        #node_pred = []
+        #node_pred.append(nn.Linear(n_heads*m_hidden, node_classes))
+        #node_pred.append(nn.LayerNorm(node_classes))
+        #self.node_pred = nn.Sequential(*node_pred)
+        
+        self.node_pred = nn.Sequential(
+              nn.Linear(n_heads*m_hidden, m_hidden),
+              nn.ReLU(True),
+              nn.Dropout(dropout*2),
+              nn.Linear(m_hidden, node_classes),
+              nn.Dropout(dropout)
+          )
         
 
     def forward(self, data):
@@ -341,8 +349,8 @@ class InputProjector(nn.Module):
         for chunk in in_chunks:
             chunk_module = []
             chunk_module.append(nn.Linear(chunk, out_chunks))
-            chunk_module.append(nn.LayerNorm(out_chunks))
-            chunk_module.append(nn.ReLU())
+            #chunk_module.append(nn.LayerNorm(out_chunks))
+            chunk_module.append(nn.ReLU(True))
             chunk_module.append(nn.Dropout(dropout))
             modules.append(nn.Sequential(*chunk_module))
         
