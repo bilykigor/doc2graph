@@ -243,6 +243,7 @@ class GAT(nn.Module):
         
         self.node_pred = nn.Sequential(
               nn.Linear(n_heads*m_hidden, m_hidden),
+              nn.LayerNorm(m_hidden),
               nn.ReLU(True),
               nn.Dropout(dropout*2),
               nn.Linear(m_hidden, node_classes),
@@ -349,7 +350,7 @@ class InputProjector(nn.Module):
         for chunk in in_chunks:
             chunk_module = []
             chunk_module.append(nn.Linear(chunk, out_chunks))
-            #chunk_module.append(nn.LayerNorm(out_chunks))
+            chunk_module.append(nn.LayerNorm(out_chunks))
             chunk_module.append(nn.ReLU(True))
             chunk_module.append(nn.Dropout(dropout))
             modules.append(nn.Sequential(*chunk_module))
