@@ -109,6 +109,29 @@ class GraphBuilder():
             v.extend([i for i in range(len(ids)) if i != id])
         return u, v
     
+    def half_fully_connected(self, bboxs : list):
+        """ create connected graph with connection allowed only to right and to bottom
+
+        Args:
+            bboxs (list) : list of bounding box coordinates
+        
+        Returns:
+            u, v (lists) : lists of indices
+        """
+        
+        bboxs_with_id = [(ix, box) for ix, box in enumerate(bboxs)]
+        
+        u, v = list(), list()
+        
+        for ix, box in enumerate(bboxs):
+            boxes_to_right = [x for x in bboxs_with_id if x[1][2]>=box[0]]
+            boxes_to_bottom = [x for x in boxes_to_right if x[1][3]>=box[1]]
+            if len(boxes_to_bottom):
+                u.extend([ix]*len(boxes_to_bottom))
+                v.extend(x[0] for x in boxes_to_bottom)
+        
+        return u, v
+    
     def knn_connection(self, size : tuple, bboxs : list, k = 10):
         """ Given a list of bounding boxes, find for each of them their k nearest ones.
 
