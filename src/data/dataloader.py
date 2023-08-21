@@ -48,7 +48,7 @@ class Document2Graph(data.Dataset):
         self.COLORS = {'invoice_info': (150, 75, 0), 'receiver':(0,100,0), 'other':(128, 128, 128), 'supplier': (255, 0, 255), 'positions':(255,140,0), 'total':(0, 255, 255)}
 
         # get graphs
-        self.graphs, self.node_labels, self.edge_labels, self.paths = self.__docs2graphs()
+        self.graphs, self.node_labels, self.edge_labels, self.paths, self.texts = self.__docs2graphs()
         
         # LABELS to numeric value
         # NODES
@@ -89,6 +89,7 @@ class Document2Graph(data.Dataset):
         geometric_graph = geometric_graph.to(self.device)
         geometric_graph['path'] = self.paths[index]
         geometric_graph['geom'] = dgl_graph.ndata['geom']
+        geometric_graph['text'] = self.texts[index]
         
         return geometric_graph
     
@@ -105,7 +106,7 @@ class Document2Graph(data.Dataset):
         """
         graphs, node_labels, edge_labels, features = self.GB.get_graph(self.src_path, self.src_data)
         self.feature_chunks, self.num_mods = self.FB.add_features(graphs, features)
-        return graphs, node_labels, edge_labels, features['paths']
+        return graphs, node_labels, edge_labels, features['paths'], features['texts']
     
     def label2class(self, label : str, node=True):
         """ Transform a label (str) into its class number.

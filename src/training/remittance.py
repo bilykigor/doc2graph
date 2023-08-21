@@ -13,6 +13,8 @@ import time
 from statistics import mean
 import numpy as np
 from PIL import Image
+from sklearn.utils import class_weight
+
 
 from src.data.dataloader import Document2Graph
 from src.paths import *
@@ -38,7 +40,7 @@ def e2e(args):
         ################* STEP 0: LOAD DATA ################
         data = Document2Graph(name='REMITTANCE TRAIN', src_path=REMITTANCE_TRAIN, device = device, output_dir=TRAIN_SAMPLES)
         data.get_info()
-        val_data = Document2Graph(name='REMITTANCE VALIDATION', src_path=REMITTANCE_VAL, device = device, output_dir=TEST_SAMPLES)
+        val_data = Document2Graph(name='REMITTANCE VALIDATION', src_path=REMITTANCE_VAL, device = device, output_dir=VALIDATION_SAMPLES)
         val_data.get_info()
         val_loader = DataLoader(range(len(val_data)), sampler=SequentialSampler(range(len(val_data))), batch_size=cfg_train.batch_size,num_workers=0)
         ################* STEP 1: CREATE MODEL ################
@@ -174,8 +176,8 @@ def e2e(args):
     
     ################* STEP 3: TESTING ################
     print("\n### TESTING ###")
+    
 
-    #? test
     test_data = Document2Graph(name='REMITTANCE TEST', src_path=REMITTANCE_TEST, device = device, output_dir=TEST_SAMPLES)
     test_data.get_info()
     
@@ -211,28 +213,7 @@ def e2e(args):
         #test_graph.edata['preds'] = preds
 
     ################* STEP 3.5: VISUALIZATION ##########
-    start_ind=0
-    npreds_all = npreds_all.cpu().detach()
-    for ind in range(len(test_data)):
-        graph = test_data.graphs[ind]
-        n_nodes = graph.ndata['feat'].shape[0]
-        img_path = test_data.paths[ind]
-        img_name = os.path.basename(img_path)
-        inference = Image.open(img_path).convert('RGB')
-        size = inference.size
-        
-        npreds = npreds_all[start_ind:start_ind+n_nodes]
-        start_ind+=n_nodes
-        arr = npreds.numpy()
-        li = list(np.where(arr>0)[0]) 
-        
-        labels = [test_data.node_unique_labels[arr[i]] for i in li]
-        boxes = list(graph.ndata['geom'].numpy())
-        boxes = [unnormalize_box(box, size[0], size[1]) for box in boxes]
-        entities =  [boxes[i] for i in li]
-        
-        inference = draw_boxes(inference, entities, labels)
-        inference.save(test_data.output_dir / img_name)
+    visualize(npreds_all,test_data)
         
     ################* STEP 4: RESULTS ################
     print("\n### RESULTS {} ###".format(m))
@@ -322,6 +303,12 @@ def gat(args):
         ################* STEP 0: LOAD DATA ################
         data = Document2Graph(name='REMITTANCE TRAIN', src_path=REMITTANCE_TRAIN, device = device, output_dir=TRAIN_SAMPLES)
         data.get_info()
+        labels = sum([list(g.y.cpu().numpy()) for g in data], [])
+        w = class_weight.compute_class_weight(class_weight='balanced', classes= np.unique(labels), y=labels)
+        weights = torch.tensor(w, dtype=torch.float32).to(device)
+        
+        print('weights:', weights)
+        
         val_data = Document2Graph(name='REMITTANCE VALIDATION', src_path=REMITTANCE_VAL, device = device, output_dir=TEST_SAMPLES)
         val_data.get_info()
         val_loader = GDataLoader(val_data, batch_size=cfg_train.batch_size, shuffle=False)
@@ -329,7 +316,7 @@ def gat(args):
         model = sm.get_model(data.get_nclasses(), data.get_efeatures_size(), data.get_chunks())
         optimizer = torch.optim.AdamW(model.parameters(), lr=float(cfg_train.lr), weight_decay=float(cfg_train.weight_decay))
         # scheduler = ReduceLROnPlateau(optimizer, 'max', patience=400, min_lr=1e-3, verbose=True, factor=0.01)
-        scheduler = StepLR(optimizer, step_size=500, gamma=0.8)
+        scheduler = StepLR(optimizer, step_size=200, gamma=0.8)
         e = datetime.now()
         train_name = args.model + f'-{e.strftime("%Y%m%d-%H%M")}'
         stopper = EarlyStopping(model, name=train_name, metric=cfg_train.stopper_metric, patience=100)
@@ -358,8 +345,7 @@ def gat(args):
                 tg = tg.to(device)
                 n_scores = model(tg)
                 
-                #print(n_scores.shape, tg.y.shape)
-                loss = compute_crossentropy_loss(n_scores, tg.y,device)
+                loss = compute_crossentropy_loss(n_scores, tg.y, weights, device)
                 tot_loss = loss
                 
                 macro, micro = get_f1(n_scores, tg.y)
@@ -404,7 +390,7 @@ def gat(args):
         
                 with torch.no_grad():
                     val_n_scores = model(vg)
-                    val_n_loss = compute_crossentropy_loss(val_n_scores, vg.y,device)
+                    val_n_loss = compute_crossentropy_loss(val_n_scores, vg.y, weights, device)
                     val_tot_loss = val_n_loss 
                     val_macro, val_micro = get_f1(val_n_scores, vg.y)
                     
@@ -439,54 +425,48 @@ def gat(args):
         models = args.weights
     
     ################* STEP 3: TESTING ################
+    print("------------------------------------------------------------------------")
     print("\n### TESTING ###")
 
-    #? test
     test_data = Document2Graph(name='REMITTANCE TEST', src_path=REMITTANCE_TEST, device = device, output_dir=TEST_SAMPLES)
     test_data.get_info()
-    test_loader = GDataLoader(test_data, batch_size=len(test_data), shuffle=False)
+    # for g in test_data:
+    #     geom = g['geom']
+    #     text = g['text']
+    #     for i in range(geom.shape[0]):
+    #         print(list(geom[i].numpy()), list(g.x[i].numpy()), text[i], g.y[i].numpy())
+    #     break
     
-    for test_graph in test_loader:
-        break
-
     m = train_name+'.pt'
     model = sm.get_model(test_data.get_nclasses(), test_data.get_efeatures_size(), test_data.get_chunks())
     model.load_state_dict(torch.load(CHECKPOINTS / m))
-    
     model.eval()
-    with torch.no_grad():
-        n = model(test_graph)
-        _, npreds_all = torch.max(F.softmax(n, dim=1), dim=1)
+    
+    npreds_all, scores, f1_test = predict(model,test_data)
+    visualize(npreds_all,scores, test_data)
+    
+    ################* STEP 3.5: INFERENCE ##########
+    print("------------------------------------------------------------------------")
+    print("\n### INFERENCE ###")
 
-        macro, micro = get_f1(n, test_graph.y)
-        f1_per_class = get_f1(n, test_graph.y, per_class=True)
-        f1_per_class = {test_data.node_unique_labels[i]:f1_per_class[i] for i in range(len(test_data.node_unique_labels))}
-        print(f'f1_per_class: {f1_per_class}')
-
-    ################* STEP 3.5: VISUALIZATION ##########
-    start_ind=0
-    npreds_all = npreds_all.cpu().detach()
-    for graph in test_data:
-        n_nodes = graph.x.shape[0]
-        img_path = graph.path
-        img_name = os.path.basename(img_path)
-        inference = Image.open(img_path).convert('RGB')
-        size = inference.size
-        
-        npreds = npreds_all[start_ind:start_ind+n_nodes]
-        start_ind+=n_nodes
-        arr = npreds.numpy()
-        li = list(np.where(arr>0)[0]) 
-        
-        labels = [test_data.node_unique_labels[arr[i]] for i in li]
-        boxes = list(graph['geom'].numpy())
-        boxes = [unnormalize_box(box, size[0], size[1]) for box in boxes]
-        entities =  [boxes[i] for i in li]
-        
-        inference = draw_boxes(inference, entities, labels)
-        inference.save(test_data.output_dir / img_name)
+    inf_data = Document2Graph(name='REMITTANCE INFERENCE', src_path=REMITTANCE_INFERENCE, device = device, output_dir=INFERENCE_SAMPLES)
+    inf_data.get_info()
+    # for g in inf_data:
+    #     geom = g['geom']
+    #     text = g['text']
+    #     for i in range(geom.shape[0]):
+    #         print(list(geom[i].numpy()), list(g.x[i].numpy()), text[i], g.y[i].numpy() )
+    #     break
+    
+    npreds_all, scores, f1_inference = predict(model,inf_data)
+    visualize(npreds_all,scores, inf_data)
+    
+    print("------------------------------------------------------------------------")
+    print(f'f1_per_class: {f1_test}', np.mean([f1_test[k] for k in f1_test if k!='O']))
+    print(f'f1_per_class: {f1_inference}', np.mean([f1_inference[k] for k in f1_inference if k!='O']))
         
     ################* STEP 4: RESULTS ################
+    print("------------------------------------------------------------------------")
     print("\n### RESULTS {} ###".format(m))
     print("F1 Nodes: Macro {:.4f} - Micro {:.4f}".format(macro, micro))
 
@@ -536,3 +516,53 @@ def train_remittance(args):
         raise Exception("Model selected does not exists. Choose 'e2e' or 'edge'.")
     return
 
+def predict(model,data):
+    test_loader = GDataLoader(data, batch_size=len(data), shuffle=False)
+    
+    for test_graph in test_loader:
+        break
+
+    with torch.no_grad():
+        n = model(test_graph)
+        scores, npreds_all = torch.max(F.softmax(n, dim=1), dim=1)
+
+        macro, micro = get_f1(n, test_graph.y)
+        f1_per_class = get_f1(n, test_graph.y, per_class=True)
+        f1_per_class = {data.node_unique_labels[i]:f1_per_class[i] for i in range(len(data.node_unique_labels))}
+        #print(f'f1_per_class: {f1_per_class}')
+        
+    return npreds_all, scores, f1_per_class
+    
+def visualize(npreds_all, scores_all, data):
+    start_ind=0
+    npreds_all = npreds_all.cpu().detach()
+    for ind in range(len(data)):
+        graph = data.graphs[ind]
+        n_nodes = graph.ndata['feat'].shape[0]
+        u, v = graph.edges()
+        
+        img_path = data.paths[ind]
+        img_name = os.path.basename(img_path)
+        #print(img_name)
+        
+        inference = Image.open(img_path).convert('RGB')
+        size = inference.size
+        
+        npreds = npreds_all[start_ind:start_ind+n_nodes]
+        scores = scores_all[start_ind:start_ind+n_nodes]
+        start_ind+=n_nodes
+        arr = npreds.numpy()
+        
+        li = list(np.where(arr>0)[0]) 
+        sc = [scores[i] for i in li]
+        
+        labels = [data.node_unique_labels[arr[i]] for i in li]
+        
+        boxes = list(graph.ndata['geom'].numpy())
+        boxes = [unnormalize_box(box, size[0], size[1]) for box in boxes]
+        entities =  [boxes[i] for i in li]
+        links = {'src': u, 'dst': v}
+        
+        inference = draw_boxes(inference, boxes, entities, labels=labels, links = links, scores=sc)
+        inference.save(data.output_dir / img_name)
+        #print(data.output_dir / img_name)

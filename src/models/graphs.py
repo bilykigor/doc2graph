@@ -1,12 +1,15 @@
 import torch
 import torch.nn as nn 
 import torch.nn.functional as F 
-from torch_geometric.nn import GCNConv, GATConv
+from torch_geometric.nn import GCNConv, GATConv, SAGEConv, GATv2Conv, FAConv
 import dgl.function as fn
 import math
+import numpy as np
 
 from src.paths import CFGM
 from src.utils import get_config
+from src.models.utils import GCNConvM, SAGEConvM, InputProjectorSimple, GATConvM, GATv2ConvM
+
 
 class SetModel():
     def __init__(self, name='e2e', device = 'cpu'):
@@ -60,7 +63,7 @@ class SetModel():
         
         elif self.name == 'GAT':
             edge_pred_features = int((math.log2(get_config('preprocessing').FEATURES.num_polar_bins) + nodes)*2)
-            m = GAT(nodes, edges, self.cfg_model.n_heads, self.cfg_model.dropout, chunks, self.cfg_model.node_projector_dim, self.cfg_model.edge_projector_dim, self.device,  edge_pred_features, self.cfg_model.doProject)
+            m = GATLSTM(nodes, edges, self.cfg_model.n_heads, self.cfg_model.dropout, chunks, self.cfg_model.node_projector_dim, self.cfg_model.edge_projector_dim, self.device,  edge_pred_features, self.cfg_model.doProject, self.cfg_model.doNorm)
 
         else:
             raise Exception(f"Error! Model {self.name} do not exists.")
@@ -207,299 +210,124 @@ class GAT(nn.Module):
                        edge_projector_dim,
                        device,
                        edge_pred_features,
-                       doProject=True):
+                       doProject=True, 
+                       doNorm = True):
 
         super().__init__()
         
         self.nclasses = node_classes
         self.num_edge_features = num_edge_features
+        self.num_node_features = sum(in_chunks)
         self.in_chunks = in_chunks
         self.edge_projector_dim = edge_projector_dim
+        self.node_projector_dim = node_projector_dim
+        self.doProject = doProject
+        self.doNorm = doNorm
         
         self.drop = nn.Dropout(dropout)
 
-        # Project inputs into higher space
-        self.node_projector = InputProjector(in_chunks, node_projector_dim, device, doProject, dropout)
-        if self.edge_projector_dim>0:
-            self.edge_projector = InputProjector([num_edge_features], edge_projector_dim, device, doProject, dropout)
-            edge_dim = edge_projector_dim
-        else:
-            edge_dim = num_edge_features
+        m_hidden = sum(in_chunks)
+        self.node_dim = node_projector_dim if self.node_projector_dim>0 else self.num_node_features
+        edge_dim = edge_projector_dim if self.edge_projector_dim>0 else num_edge_features
+        
+        if doProject:
             
-        # Perform message passing
-        m_hidden = self.node_projector.get_out_lenght()
-        
-        
-        self.message_passing = GATConv(m_hidden, m_hidden, edge_dim = edge_dim, heads=n_heads, dropout = dropout, v2 = True, add_self_loops = False)
-
-        # Define edge predictor layer
-        #self.edge_pred = MLPPredictor_E2E(m_hidden, hidden_dim, edge_classes, dropout,  edge_pred_features)
-
-        # Define node predictor layer
-        #node_pred = []
-        #node_pred.append(nn.Linear(n_heads*m_hidden, node_classes))
-        #node_pred.append(nn.LayerNorm(node_classes))
-        #self.node_pred = nn.Sequential(*node_pred)
-        
-        self.node_pred = nn.Sequential(
-              nn.Linear(n_heads*m_hidden, m_hidden),
-              nn.LayerNorm(m_hidden),
-              nn.ReLU(True),
-              nn.Dropout(dropout*2),
-              nn.Linear(m_hidden, node_classes),
-              nn.Dropout(dropout)
-          )
+            self.node_projector = InputProjectorSimple(m_hidden, self.node_dim, dropout, doNorm)
+            self.edge_projector = InputProjectorSimple(num_edge_features, edge_dim, dropout, doNorm)
+                
+            #self.message_passing =GcnSAGELayer(m_hidden, m_hidden, F.relu, dropout)
+            #self.message_passing = GCNConv(self.node_dim, self.node_dim, edge_dim = edge_dim, heads=n_heads, dropout = dropout, v2 = True, improved = True, normalize = False, add_self_loops = False, bias = False, aggr='add')
+            self.message_passing = GATv2ConvM(self.node_dim, self.node_dim, edge_dim = edge_dim, heads=n_heads, dropout = dropout, v2 = True, add_self_loops = False, aggr='add', bias=False)
+            #self.message_passing = SAGEConvM(self.node_dim, self.node_dim, project = True)
+        else:
+            self.message_passing = GATv2ConvM(m_hidden, m_hidden, edge_dim = edge_dim, heads=n_heads, dropout = dropout, v2 = True, add_self_loops = False, aggr='add', bias=False)
+            
+        self.node_pred = InputProjectorSimple(2* n_heads*self.node_dim, node_classes, dropout, doNorm)
         
 
-    def forward(self, data):
+    def forward(self, data,return_attention_weights = None):
         x, edge_index, edge_attr = data.x, data.edge_index, data.edge_attr
         
-        x = self.node_projector(x)
-        if self.edge_projector_dim>0:
+        if self.doProject:
+            x = self.node_projector(x)
             e = self.edge_projector(edge_attr)
         else:
             e = edge_attr
-        
-        x = self.message_passing(x, edge_index, edge_attr=e)
+            
+        x = self.message_passing(x, edge_index)
+        #x = self.message_passing(x, edge_index, edge_attr=e)
         x = F.relu(x)
+        if self.doNorm:
+            x = F.layer_norm(x, x.shape)
         x = self.drop(x)
 
         x = self.node_pred(x)
         
         return x
 
-################
-##### LYRS #####
 
-class GcnSAGELayer(nn.Module):
-    def __init__(self,
-                 in_feats,
-                 out_feats,
-                 activation,
-                 dropout,
-                 bias=True,
-                 use_pp=False,
-                 use_lynorm=True):
-        super(GcnSAGELayer, self).__init__()
-        self.linear = nn.Linear(2 * in_feats, out_feats, bias=bias)
-        self.activation = activation
-        self.use_pp = use_pp
-        if dropout:
-            self.dropout = nn.Dropout(p=dropout)
-        else:
-            self.dropout = 0.
-        if use_lynorm:
-            self.lynorm = nn.LayerNorm(out_feats, elementwise_affine=True)
-        else:
-            self.lynorm = lambda x: x
-        self.reset_parameters()
+class GATLSTM(nn.Module):
+    def __init__(self, node_classes, 
+                       num_edge_features, 
+                       n_heads, 
+                       dropout, 
+                       in_chunks, 
+                       node_projector_dim, 
+                       edge_projector_dim,
+                       device,
+                       edge_pred_features,
+                       doProject=True, 
+                       doNorm = True):
 
-    def reset_parameters(self):
-        stdv = 1. / math.sqrt(self.linear.weight.size(1))
-        self.linear.weight.data.uniform_(-stdv, stdv)
-        if self.linear.bias is not None:
-            self.linear.bias.data.uniform_(-stdv, stdv)
-
-    def forward(self, g, h):
-        g = g.local_var()
-        
-        if not self.use_pp:
-            # norm = self.get_norm(g)
-            norm = g.ndata['norm']
-            g.ndata['h'] = h
-            g.update_all(fn.u_mul_e('h', 'weights', 'm'),
-                        fn.sum(msg='m', out='h'))
-            ah = g.ndata.pop('h')
-            h = self.concat(h, ah, norm)
-
-        if self.dropout:
-            h = self.dropout(h)
-
-        h = self.linear(h)
-        h = self.lynorm(h)
-        if self.activation:
-            h = self.activation(h)
-        return h
-
-    def concat(self, h, ah, norm):
-        ah = ah * norm
-        h = torch.cat((h, ah), dim=1)
-        return h
-
-    def get_norm(self, g):
-        norm = 1. / g.in_degrees().float().unsqueeze(1)
-        norm[torch.isinf(norm)] = 0
-        norm = norm.to(self.linear.weight.device)
-        return norm
-
-class InputProjector(nn.Module):
-    def __init__(self, in_chunks : list, out_chunks : int, device, doIt = True, dropout=0.2) -> None:
         super().__init__()
         
-        if not doIt:
-            self.output_length = sum(in_chunks)
-            self.doIt = doIt
-            return
-
-        self.output_length = len(in_chunks)*out_chunks
-        self.doIt = doIt
-        self.chunks = in_chunks
-        modules = []
-        self.device = device
-
-        for chunk in in_chunks:
-            chunk_module = []
-            chunk_module.append(nn.Linear(chunk, out_chunks))
-            chunk_module.append(nn.LayerNorm(out_chunks))
-            chunk_module.append(nn.ReLU(True))
-            chunk_module.append(nn.Dropout(dropout))
-            modules.append(nn.Sequential(*chunk_module))
+        self.nclasses = node_classes
+        self.num_edge_features = num_edge_features
+        self.num_node_features = sum(in_chunks)
+        self.in_chunks = in_chunks
+        self.in_chunks_cumsum = [0]
+        self.in_chunks_cumsum.extend(list(np.cumsum(in_chunks)))
+        self.edge_projector_dim = edge_projector_dim
+        self.node_projector_dim = node_projector_dim
+        self.doNorm = doNorm
         
-        self.modalities = nn.Sequential(*modules)
-        self.chunks.insert(0, 0)
-    
-    def get_out_lenght(self):
-        return self.output_length
-    
-    def forward(self, h):
-
-        if not self.doIt:
-            return h
-
-        mid = []
-
-        for name, module in self.modalities.named_children():
-            num = int(name)
-            if num + 1 == len(self.chunks): break
-            start = self.chunks[num] + sum(self.chunks[:num])
-            end = start + self.chunks[num+1]
-            input = h[:, start:end].to(self.device)
-            mid.append(module(input))
-
-        return torch.cat(mid, dim=1)
-
-class MLPPredictor(nn.Module):
-    def __init__(self, in_features, hidden_dim, out_classes, dropout):
-        super().__init__()
-        self.out = out_classes
-        self.W1 = nn.Linear(in_features*2, hidden_dim)
-        self.norm = nn.LayerNorm(hidden_dim)
-        self.W2 = nn.Linear(hidden_dim + 6, out_classes)
+        print(f'in_chunks: {in_chunks}')
+        
         self.drop = nn.Dropout(dropout)
 
-    def apply_edges(self, edges):
-        h_u = edges.src['h']
-        h_v = edges.dst['h']
-        polar = edges.data['feat']
-
-        x = F.relu(self.norm(self.W1(torch.cat((h_u, h_v), dim=1))))
-        x = torch.cat((x, polar), dim=1)
-        score = self.drop(self.W2(x))
-
-        return {'score': score}
-
-    def forward(self, graph, h):
-        # h contains the node representations computed from the GNN defined
-        # in the node classification section (Section 5.1).
-        with graph.local_scope():
-            graph.ndata['h'] = h
-            graph.apply_edges(self.apply_edges)
-            return graph.edata['score']
-
-class MLPPredictor_E2E(nn.Module):
-    def __init__(self, in_features, hidden_dim, out_classes, dropout,  edge_pred_features):
-        super().__init__()
-        self.out = out_classes
-        self.W1 = nn.Linear(in_features*2 +  edge_pred_features, hidden_dim)
-        self.norm = nn.LayerNorm(hidden_dim)
-        self.W2 = nn.Linear(hidden_dim, out_classes)
-        self.drop = nn.Dropout(dropout)
-
-    def apply_edges(self, edges):
-        h_u = edges.src['h']
-        h_v = edges.dst['h']
-        cls_u = F.softmax(edges.src['cls'], dim=1)
-        cls_v = F.softmax(edges.dst['cls'], dim=1)
-        polar = edges.data['feat']
-
-        x = F.relu(self.norm(self.W1(torch.cat((h_u, cls_u, polar, h_v, cls_v), dim=1))))
-        score = self.drop(self.W2(x))
-
-        return {'score': score}
-
-    def forward(self, graph, h, cls):
-        # h contains the node representations computed from the GNN defined
-        # in the node classification section (Section 5.1).
-        with graph.local_scope():
-            graph.ndata['h'] = h
-            graph.ndata['cls'] = cls
-            graph.apply_edges(self.apply_edges)
-            return graph.edata['score']
-    
-class Attention(nn.Module):
-    # single head attention
-    def __init__(self, in_features, out_features, alpha):
-        super(Attention, self).__init__()
-        self.alpha = alpha
-
-        self.W = nn.Linear(in_features, out_features, bias = False)
-        self.a_T = nn.Linear(2 * out_features, 1, bias = False)
-
-        nn.init.xavier_uniform_(self.W.weight)
-        nn.init.xavier_uniform_(self.a_T.weight)
-
-    def forward(self, h, adj):
-        # h : a tensor with size [N, F] where N be a number of nodes and F be a number of features
-        N = h.size(0)
-        Wh = self.W(h) # h -> Wh : [N, F] -> [N, F']
+        edge_dim = edge_projector_dim if self.edge_projector_dim>0 else num_edge_features
         
-        # H1 : [N, N, F'], H2 : [N, N, F'], attn_input = [N, N, 2F']
-
-        # H1 = [[h1 h1 ... h1]   |  H2 = [[h1 h2 ... hN]   |   attn_input = [[h1||h1 h1||h2 ... h1||hN]
-        #       [h2 h2 ... h2]   |        [h1 h2 ... hN]   |                 [h2||h1 h2||h2 ... h2||hN]
-        #            ...         |             ...         |                         ...
-        #       [hN hN ... hN]]  |        [h1 h2 ... hN]]  |                 [hN||h1 hN||h2 ... hN||hN]]
+        self.node_projector = [InputProjectorSimple(in_chunk, self.node_projector_dim, dropout, doNorm) for in_chunk in in_chunks]
+        self.edge_projector = InputProjectorSimple(num_edge_features, edge_dim, dropout, doNorm)
         
-        H1 = Wh.unsqueeze(1).repeat(1,N,1)
-        H2 = Wh.unsqueeze(0).repeat(N,1,1)
-        attn_input = torch.cat([H1, H2], dim = -1)
-
-        e = F.leaky_relu(self.a_T(attn_input).squeeze(-1), negative_slope = self.alpha) # [N, N]
+        self.message_passing = [GATv2ConvM(self.node_projector_dim, self.node_projector_dim, edge_dim = edge_dim, heads=n_heads, dropout = dropout, v2 = True, add_self_loops = False, aggr='add', bias=False) for in_chunk in in_chunks]
+                
+        self.LSTM = nn.LSTM(2*self.node_projector_dim,2*self.node_projector_dim,bidirectional=True, batch_first = True)
         
-        attn_mask = -1e18*torch.ones_like(e)
-        masked_e = torch.where(adj > 0, e, attn_mask)
-        attn_scores = F.softmax(masked_e, dim = -1) # [N, N]
-
-        h_prime = torch.mm(attn_scores, Wh) # [N, F']
-
-        return F.elu(h_prime) # [N, F']
-
-class GraphAttentionLayer(nn.Module):
-    # multi head attention
-    def __init__(self, in_features, out_features, num_heads, alpha, concat=True):
-        super(GraphAttentionLayer, self).__init__()
-        self.concat = concat
-        self.attentions = nn.ModuleList([Attention(in_features, out_features, alpha) for _ in range(num_heads)])
+        self.node_pred = InputProjectorSimple(4* n_heads*self.node_projector_dim, node_classes, dropout, doNorm)
         
-    def forward(self, input, adj):
-        # input (= X) : a tensor with size [N, F]
 
-        if self.concat :
-            # concatenate
-            outputs = []
-            for attention in self.attentions:
-                outputs.append(attention(input, adj))
-            
-            return torch.cat(outputs, dim = -1) # [N, KF']
-
-        else :
-            # average
-            output = None
-            for attention in self.attentions:
-                if output == None:
-                    output = attention(input, adj)
-                else:
-                    output += attention(input, adj)
-            
-            return output/len(self.attentions) # [N, F']
+    def forward(self, data,return_attention_weights = None):
+        x, edge_index, edge_attr = data.x, data.edge_index, data.edge_attr
         
+        e = self.edge_projector(edge_attr)
+        
+        combined_tensor = []
+        for i,node_projector in enumerate(self.node_projector):
+            sub_x = x[:,self.in_chunks_cumsum[i]:self.in_chunks_cumsum[i+1]]
+            sub_x = node_projector(sub_x)
+            #sub_x = self.message_passing[i](sub_x, edge_index)
+            sub_x = self.message_passing[i](sub_x, edge_index, edge_attr=e)
+            sub_x = F.relu(sub_x)
+            if self.doNorm:
+                sub_x = F.layer_norm(sub_x, sub_x.shape)
+            sub_x = self.drop(sub_x)
+            combined_tensor.append(sub_x)
+        
+        combined_tensor = torch.stack(combined_tensor, dim=1)
+
+        output, (last_hidden, cell_state) = self.LSTM(combined_tensor)
+
+        x = self.node_pred(torch.cat((last_hidden[0], last_hidden[1]), dim=1))
+
+        return x

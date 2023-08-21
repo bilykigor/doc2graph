@@ -10,9 +10,16 @@ from pytesseract import Output
 
 from src.paths import DATA, FUNSD_TEST
 
-def draw_boxes(image, boxes, labels=None, color='green', width=2):
+def draw_boxes(image, boxes_all, boxes, labels=None, links = None, scores = None, color='green', width=2):
     draw = ImageDraw.Draw(image, "RGBA")
     font = ImageFont.load_default()
+    
+    if links:
+        for idx in range(len(links['src'])):
+            key_center = center(boxes_all[links['src'][idx]])
+            value_center = center(boxes_all[links['dst'][idx]])
+            draw.line((key_center, value_center), fill='violet', width=2)
+            
     if labels:
         for box,label in zip(boxes,labels):
             if color=='green':
@@ -22,7 +29,17 @@ def draw_boxes(image, boxes, labels=None, color='green', width=2):
             draw.rectangle(box, outline=(color), width=width,fill=fill)
             text_position = (box[0]+10, box[1]-10)
             text = str(label)
-            draw.text(text_position, text=text, font=font, fill=(255,0, 0)) # 
+            draw.text(text_position, text=text, font=font, fill=(255,0, 0)) 
+        if scores:
+            for box,label, score in zip(boxes,labels, scores):
+                if color=='green':
+                    fill=(0, 255, 0, 127)
+                else:
+                    fill=(255, 0, 0, 127)
+                draw.rectangle(box, outline=(color), width=width,fill=fill)
+                text_position = (box[0]+10, box[1]-10)
+                text = '%s-%6.2f' % (label, score)
+                draw.text(text_position, text=text, font=font, fill=(255,0, 0)) 
     else:
         for box in boxes:
             if color=='green':

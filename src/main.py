@@ -7,7 +7,29 @@ from src.training.remittance import train_remittance
 from src.utils import create_folder, project_tree, set_preprocessing
 from src.training.pau import train_pau
 
+def seed_everything(seed=10):
+    import os
+    import random
+    import numpy as np
+    import torch
+    import pytorch_lightning as pl
+
+    random.seed(seed)
+    os.environ['PYTHONHASHSEED'] = str(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
+    #os.environ['CUDNN_CONVOLUTION_FWD_PREFER_FASTEST'] = "True"
+    #pl.seed_everything(seed)
+    #torch.set_default_tensor_type('torch.DoubleTensor')
+    
+    
 def main():
+    seed_everything(42)
+    
     parser = argparse.ArgumentParser(description='Training')
 
     # init
@@ -23,6 +45,8 @@ def main():
                         help="add polar relations of nodes")
     parser.add_argument('--add-embs', '-addT', action="store_true",
                         help="add textual embeddings to nodes")
+    parser.add_argument('--add-mask', '-addM', action="store_true",
+                        help="add textual mask to nodes")
     parser.add_argument('--add-hist', '-addH', action="store_true",
                         help="add histogram of contents to nodes")
     parser.add_argument('--add-visual', '-addV', action="store_true",

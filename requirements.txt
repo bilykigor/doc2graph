@@ -13,6 +13,9 @@ itsdangerous==2.0.1
 tensorboard==2.9.1
 torch_geometric
 
+#pip3 uninstall -y cryptography
+fabric==3.2.1
+
 # numpy>=1.22
 # Pillow>=9.1.1
 # PyYAML==6.0

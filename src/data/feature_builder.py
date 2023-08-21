@@ -8,13 +8,53 @@ from math import sqrt
 from tqdm import tqdm
 from PIL import Image, ImageDraw
 import torchvision.transforms.functional as tvF
+from sentence_transformers import SentenceTransformer, util
+
 
 from src.paths import CHECKPOINTS
 from src.models.unet import Unet
 from src.data.utils import to_bin, to_bin2
-from src.data.utils import polar, get_histogram, polar2, polar3, intersectoin_by_axis
+from src.data.utils import polar, get_histogram, polar2, polar3, intersectoin_by_axis, find_dates, find_amounts, find_numbers, find_codes, find_word, find_words
 from src.utils import get_config
 from src.data.preprocessing import normalize_box
+
+#text_embedder = spacy.load('en_core_web_lg')
+text_embedder = SentenceTransformer('paraphrase-multilingual-MiniLM-L12-v2')
+
+def text_to_mask(text):
+    emb=[0,0,0,0,0,0]
+    if find_dates(text):
+        #print(text)
+        emb[0]=1
+    elif find_amounts(text):
+        #print(text)
+        emb[1]=1
+    elif find_numbers(text):
+        #print(text)
+        emb[2]=1
+    elif find_codes(text):
+        #print(text)
+        emb[3]=1
+    elif find_word(text) or find_words(text):
+        #print(text)
+        emb[4]=1
+    #else:
+    #    print(text)
+    #emb.append(len(text))
+    #emb.append(len(text.split()))
+    return emb
+
+# def text_to_embedding(text):
+#     if find_word(text) or find_words(text):
+#         return text_embedder(text).vector
+    
+#     return np.zeros(300, dtype=np.float32)
+
+def text_to_embedding(text):
+    #if find_word(text) or find_words(text):
+    return text_embedder.encode(text, convert_to_tensor=False)
+    
+    #return np.zeros(384, dtype=np.float32)
 
 class FeatureBuilder():
 
@@ -30,6 +70,7 @@ class FeatureBuilder():
         self.add_epolar = self.cfg_preprocessing.FEATURES.add_epolar
         self.add_size = self.cfg_preprocessing.FEATURES.add_size
         self.add_embs = self.cfg_preprocessing.FEATURES.add_embs
+        self.add_mask = self.cfg_preprocessing.FEATURES.add_mask
         self.add_hist = self.cfg_preprocessing.FEATURES.add_hist
         self.add_visual = self.cfg_preprocessing.FEATURES.add_visual
         self.add_edist = self.cfg_preprocessing.FEATURES.add_edist
@@ -38,7 +79,10 @@ class FeatureBuilder():
         self.num_polar_bins = self.cfg_preprocessing.FEATURES.num_polar_bins
 
         if self.add_embs:
-            self.text_embedder = spacy.load('en_core_web_lg')
+            self.text_embedder = text_to_embedding
+            
+        if self.add_mask:
+            self.mask_embedder = text_to_mask
 
         if self.add_visual:
             self.visual_embedder = Unet(encoder_name="mobilenet_v2", encoder_weights=None, in_channels=1, classes=4)
@@ -100,8 +144,14 @@ class FeatureBuilder():
             if self.add_embs:
                 
                 # LANGUAGE MODEL (SPACY)
-                _ = [feats[idx].extend(self.text_embedder(features['texts'][id][idx]).vector) for idx, _ in enumerate(feats)]
-                chunks.append(len(self.text_embedder(features['texts'][id][0]).vector))
+                _ = [feats[idx].extend(self.text_embedder(features['texts'][id][idx])) for idx, _ in enumerate(feats)]
+                chunks.append(len(self.text_embedder(features['texts'][id][0])))
+                
+            if self.add_mask:
+                
+                # LANGUAGE MODEL (SPACY)
+                _ = [feats[idx].extend(self.mask_embedder(features['texts'][id][idx])) for idx, _ in enumerate(feats)]
+                chunks.append(len(self.mask_embedder(features['texts'][id][0])))
             
             # visual features
             # https://pytorch.org/vision/stable/generated/torchvision.ops.roi_align.html?highlight=roi

@@ -10,13 +10,25 @@ from tqdm import tqdm
 import xml.etree.ElementTree as ET
 import easyocr
 import cv2
+import math
 
 from src.data.preprocessing import load_predictions, unnormalize_box
 from src.data.utils import polar
 from src.paths import DATA, FUNSD_TEST
 from src.utils import get_config
 from src.data.utils import intersectoin_by_axis
+from src.data.utils import find_dates, find_amounts, find_numbers, find_codes, find_word, find_words
 
+def box_distance(box1, box2):
+        x1_center = (box1[0] + box1[2]) / 2
+        y1_center = (box1[1] + box1[3]) / 2
+        
+        x2_center = (box2[0] + box2[2]) / 2
+        y2_center = (box2[1] + box2[3]) / 2
+        
+        distance = math.sqrt((x2_center - x1_center)**2 + (y2_center - y1_center)**2)
+        
+        return distance
 
 class GraphBuilder():
 
@@ -110,11 +122,12 @@ class GraphBuilder():
             v.extend([i for i in range(len(ids)) if i != id])
         return u, v
     
-    def half_fully_connected(self, bboxs : list):
+    def half_fully_connected(self, bboxs : list, texts: list, keep_n=-1):
         """ create connected graph with connection allowed only to right and to bottom
 
         Args:
             bboxs (list) : list of bounding box coordinates
+            texts (list) : list of text in bboxs
         
         Returns:
             u, v (lists) : lists of indices
@@ -125,15 +138,82 @@ class GraphBuilder():
         u, v = list(), list()
         
         for ix, box in enumerate(bboxs):
-            boxes_to_right = [x for x in bboxs_with_id if x[1][0]+x[1][2]>=box[0]+box[2] and x[0]!=ix]
-            boxes_to_bottom = [x for x in boxes_to_right if x[1][1]+x[1][3]>=box[1]+box[3] and x[0]!=ix]
-            if len(boxes_to_bottom):
-                u.extend([ix]*len(boxes_to_bottom))
-                v.extend(x[0] for x in boxes_to_bottom)
+            boxes_to_right = [x for x in bboxs_with_id if 2*x[1][2]>=box[0]+box[2] and x[0]!=ix]
+            boxes_to_bottom = [x for x in boxes_to_right if 2*x[1][3]>=box[1]+box[3] and x[0]!=ix]
+            boxes_to_bottom = sorted(boxes_to_bottom,key=lambda x: x[1][1]*x[1][1]+x[1][0]*x[1][0], reverse=False)
+            
+            source_word = find_word(texts[ix]) or find_words(texts[ix])
+            
+            if boxes_to_bottom:
+                n_added=0
+                for box_to_bottom in boxes_to_bottom:
+                    target_word = find_word(texts[box_to_bottom[0]]) or find_words(texts[box_to_bottom[0]])
+                    
+                    if target_word:
+                        continue
+                    
+                    if keep_n > 0:
+                        if n_added >= keep_n:
+                            break
+                    
+                    n_added+=1            
+                    u.append(ix)
+                    v.append(box_to_bottom[0])
         
         return u, v
+
+    def half_fully_connected2(self, bboxs : list, texts: list, keep_n=-1):
+        """ create connected graph with connection allowed only to left and to up
+
+        Args:
+            bboxs (list) : list of bounding box coordinates
+            texts (list) : list of text in bboxs
+        
+        Returns:
+            u, v (lists) : lists of indices
+        """
+        
+        bboxs_with_id = [(ix, box) for ix, box in enumerate(bboxs)]
+        
+        u, v = list(), list()
+        
+        for ix, box in enumerate(bboxs):
+            source_number = find_dates(texts[ix]) or find_amounts(texts[ix]) or find_numbers(texts[ix]) or find_codes(texts[ix])
+            
+            if not source_number:
+                continue
+            
+            boxes_to_left = [x for x in bboxs_with_id if 2*x[1][0]<=box[0]+box[2] and x[0]!=ix]
+            boxes_to_up = [x for x in boxes_to_left if 2*x[1][1]<=box[1]+box[3] and x[0]!=ix]
+            boxes_to_up = sorted(boxes_to_up,key=lambda x: x[1][1]*x[1][1]+x[1][0]*x[1][0], reverse=True)
+            
+            if boxes_to_up:
+                n_added=0
+                prev_dist = None
+                for box_to_up in boxes_to_up:
+                    target_word = find_word(texts[box_to_up[0]]) or find_words(texts[box_to_up[0]])
+                    
+                    if not target_word:
+                        continue
+                    
+                    if keep_n > 0:
+                        if n_added >= keep_n:
+                            break
+                    
+                    curr_dist = box_distance(box_to_up[1], box)   
+                    if prev_dist:
+                        if curr_dist>prev_dist*1.5:
+                            break
+                    
+                    n_added+=1            
+                    u.append(ix)
+                    v.append(box_to_up[0])
+                    
+                    prev_dist = curr_dist
+        
+        return v, u
     
-    def half_share_connected(self, bboxs : list, min_share=0.1):
+    def half_share_connected(self, bboxs : list, texts: list, min_share=0.1):
         """ create connected graph with connection allowed only to right and to bottom
 
         Args:
@@ -152,13 +232,26 @@ class GraphBuilder():
             boxes_to_right = [x for x in boxes_to_right if 0.5*(x[1][1]+x[1][3])>=box[1]]
             
             boxes_to_right = [x for x in boxes_to_right if intersectoin_by_axis('x',x[1], box)>min_share]
+            
+            #source_word = find_word(texts[ix]) or find_words(texts[ix])
+            
+            #print(texts[ix], source_word)
            
             if len(boxes_to_right):
                 boxes_to_right = sorted(boxes_to_right,key=lambda x: x[1][0], reverse=False)
                 boxes_to_right = boxes_to_right[:1]
                 #print(boxes_to_right)
-                u.extend([ix]*len(boxes_to_right))
-                v.extend(x[0] for x in boxes_to_right)
+                if boxes_to_right:
+                    box_to_right = boxes_to_right[0]
+                    
+                    #if source_word:
+                    target_word = find_word(texts[box_to_right[0]]) or find_words(texts[box_to_right[0]])
+                    # else:
+                    #     target_word = False
+                        
+                    if not target_word:
+                        u.append(ix)
+                        v.append(box_to_right[0])
             
             boxes_to_bottom = [x for x in bboxs_with_id if x[1][1]+x[1][3]>=box[1]+box[3] and x[0]!=ix]
             boxes_to_bottom = [x for x in boxes_to_bottom if 0.5*(x[1][0]+x[1][2])>=box[0]]
@@ -167,8 +260,17 @@ class GraphBuilder():
             if len(boxes_to_bottom):
                 boxes_to_bottom = sorted(boxes_to_bottom,key=lambda x: x[1][1], reverse=False)
                 boxes_to_bottom = boxes_to_bottom[:1]
-                u.extend([ix]*len(boxes_to_bottom))
-                v.extend(x[0] for x in boxes_to_bottom)
+                if boxes_to_bottom:
+                    box_to_bottom = boxes_to_bottom[0]
+                
+                #if source_word:
+                target_word = find_word(texts[box_to_bottom[0]]) or find_words(texts[box_to_bottom[0]])
+                # else:
+                #     target_word = False    
+                    
+                if not target_word:
+                    u.append(ix)
+                    v.append(box_to_bottom[0])    
             #break
         
         return u, v
@@ -550,7 +652,7 @@ class GraphBuilder():
         # justOne = random.choice(os.listdir(os.path.join(src, 'adjusted_annotations'))).split(".")[0]
         
         if self.node_granularity == 'gt':
-            files = os.listdir(os.path.join(src, 'layoutlm_annotations'))#[:5]
+            files = os.listdir(os.path.join(src, 'layoutlm_annotations'))#[:100]
             for file in tqdm(files, desc='Creating graphs - GT'):
             
                 img_name = f'{file.split(".")[0]}.jpg'
@@ -571,9 +673,14 @@ class GraphBuilder():
                 for id, elem in enumerate(form):
                     boxs.append(unnormalize_box(elem['box'], size[0], size[1]))
                     texts.append(elem['text'])
-                    if elem['label'] not in ['invoice_amount', 'invoice_date',
-                                            'invoice_number', 'payment_amount', 'payment_date',
-                                            'payment_number']:
+                    
+                    #debug
+                    # if elem['text'].lower() in ['amount']:
+                    #     elem['label'] = 'invoice_amount'
+                    # else:
+                    #     elem['label'] = 'O'
+                    
+                    if elem['label'] not in ['invoice_amount', 'invoice_date','invoice_number', 'payment_amount', 'payment_date','payment_number']:
                         nl.append('O')
                     else:
                         nl.append(elem['label'])
@@ -589,8 +696,9 @@ class GraphBuilder():
                 
                 # getting edges
                 if self.edge_type == 'fully':
-                    u, v = self.fully_connected(range(len(boxs)))
-                    #u, v = self.half_fully_connected(boxs)
+                    #u, v = self.fully_connected(range(len(boxs)))
+                    u, v = self.half_fully_connected2(boxs, texts,2)
+                    #u, v = self.half_share_connected(boxs,texts)
                 elif self.edge_type == 'knn': 
                     u,v = self.knn_connection(Image.open(img_path).size, boxs)
                 else:

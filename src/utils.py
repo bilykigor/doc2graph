@@ -38,6 +38,8 @@ def project_tree() -> None:
     create_folder(RESULTS)
     create_folder(TRAIN_SAMPLES)
     create_folder(TEST_SAMPLES)
+    create_folder(VALIDATION_SAMPLES)
+    create_folder(INFERENCE_SAMPLES)
     create_folder(CHECKPOINTS)
     return
 
@@ -53,6 +55,7 @@ def set_preprocessing(args: ArgumentParser) -> None:
     cfg_preprocessing['FEATURES']['add_epolar'] = args.add_epolar
     cfg_preprocessing['FEATURES']['add_size'] = args.add_size
     cfg_preprocessing['FEATURES']['add_embs'] = args.add_embs
+    cfg_preprocessing['FEATURES']['add_mask'] = args.add_mask
     cfg_preprocessing['FEATURES']['add_hist'] = args.add_hist
     cfg_preprocessing['FEATURES']['add_visual'] = args.add_visual
     cfg_preprocessing['FEATURES']['add_edist'] = args.add_edist

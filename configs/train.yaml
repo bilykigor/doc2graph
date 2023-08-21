@@ -1,8 +1,8 @@
-batch_size: 5
-max_batch_size: 5
-batch_size_step: 5
+batch_size: 128
+max_batch_size: 512
+batch_size_step: 128
 epoch_size_step: 100
-epochs: 10
+epochs: 1000
 lr: 1e-3
 weight_decay: 0.001
 val_size : 0.1

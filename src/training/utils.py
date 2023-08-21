@@ -58,19 +58,19 @@ class EarlyStopping:
             return 'improved'
         
         if self.metric in ['loss','loss_diff']:
-            if score > self.best_score:
+            if score < self.best_score - 0.0001:
+                print(f'    !- Validation LOSS decreased from {self.best_score} -> {score}')
+                self.best_score = score
+                self.save_checkpoint()
+                self.counter = 0
+                self.early_stop = 'improved'
+            else:
                 self.counter += 1
                 if self.counter % 10 ==0:
                     print(f'    !- Stop Counter {self.counter} / {self.patience}')
                 self.early_stop = 'not-improved'
                 if self.counter >= self.patience:
                     self.early_stop = 'stop'
-            else:
-                print(f'    !- Validation LOSS decreased from {self.best_score} -> {score}')
-                self.best_score = score
-                self.save_checkpoint()
-                self.counter = 0
-                self.early_stop = 'improved'
 
         elif self.metric == 'acc':
             if score <= self.best_score:
@@ -152,9 +152,9 @@ def get_f1(logits : torch.Tensor, labels : torch.Tensor, per_class = False) -> t
     indices = indices.cpu().detach().numpy()
     labels = labels.cpu().detach().numpy()
     if not per_class:
-        return f1_score(labels, indices, average='macro'), f1_score(labels, indices, average='micro')
+        return f1_score(labels, indices, average='macro', zero_division=0), f1_score(labels, indices, average='micro', zero_division=0)
     else:
-        return precision_recall_fscore_support(labels, indices, average=None)[2].tolist()
+        return precision_recall_fscore_support(labels, indices, average=None, zero_division=0)[2].tolist()
 
 def get_binary_accuracy_and_f1(classes, labels : torch.Tensor, per_class = False) -> Tuple[float, list]:
 
@@ -164,9 +164,9 @@ def get_binary_accuracy_and_f1(classes, labels : torch.Tensor, per_class = False
     labels = labels.cpu().numpy()
 
     if not per_class:
-        f1 = f1_score(labels, classes, average='macro'), f1_score(labels, classes, average='micro')
+        f1 = f1_score(labels, classes, average='macro', zero_division=0), f1_score(labels, classes, average='micro', zero_division=0)
     else:
-        f1 = precision_recall_fscore_support(labels, classes, average=None)[2].tolist()
+        f1 = precision_recall_fscore_support(labels, classes, average=None, zero_division=0)[2].tolist()
     
     return accuracy, f1
 
@@ -209,6 +209,8 @@ def get_features(args : ArgumentParser) -> Tuple[str, str]:
         feat_e += 'polar+ '
     if args.add_embs:
         feat_n += 'text+ '
+    if args.add_mask:
+        feat_n += 'mask+ '
     if args.add_visual:
         feat_n += 'visual+ '
     if args.add_hist:
@@ -220,15 +222,15 @@ def get_features(args : ArgumentParser) -> Tuple[str, str]:
         
     return feat_n, feat_e
 
-def compute_crossentropy_loss(scores : torch.Tensor, labels : torch.Tensor, device):
-    w = class_weight.compute_class_weight(class_weight='balanced', classes= np.unique(labels.cpu().numpy()), y=labels.cpu().numpy())
-    return torch.nn.CrossEntropyLoss(weight=torch.tensor(w, dtype=torch.float32).to(device))(scores, labels)
+def compute_crossentropy_loss(scores : torch.Tensor, labels : torch.Tensor, weights : torch.Tensor, device):
+    #w = class_weight.compute_class_weight(class_weight='balanced', classes= np.unique(labels.cpu().numpy()), y=labels.cpu().numpy())
+    return torch.nn.CrossEntropyLoss(weight=weights)(scores, labels)
 
 def compute_auc_mc(scores, labels):
     scores = scores.detach().cpu().numpy()
     labels = F.one_hot(labels).cpu().numpy()
     # return roc_auc_score(labels, scores)
-    return average_precision_score(labels, scores)
+    return average_precision_score(labels, scores, zero_division=0)
 
 def find_optimal_cutoff(target, predicted):
     """ Find the optimal probability cutoff point for a classification model related to event rate
