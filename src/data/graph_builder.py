@@ -652,7 +652,7 @@ class GraphBuilder():
         # justOne = random.choice(os.listdir(os.path.join(src, 'adjusted_annotations'))).split(".")[0]
         
         if self.node_granularity == 'gt':
-            files = os.listdir(os.path.join(src, 'layoutlm_annotations'))#[:100]
+            files = os.listdir(os.path.join(src, 'layoutlm_annotations'))#[:10]
             for file in tqdm(files, desc='Creating graphs - GT'):
             
                 img_name = f'{file.split(".")[0]}.jpg'

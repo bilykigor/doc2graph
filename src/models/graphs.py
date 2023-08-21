@@ -297,37 +297,38 @@ class GATLSTM(nn.Module):
 
         edge_dim = edge_projector_dim if self.edge_projector_dim>0 else num_edge_features
         
-        self.node_projector = [InputProjectorSimple(in_chunk, self.node_projector_dim, dropout, doNorm) for in_chunk in in_chunks]
+        self.node_projector = [InputProjectorSimple(in_chunk, self.node_projector_dim, dropout, doNorm).to(device) for in_chunk in in_chunks]
         self.edge_projector = InputProjectorSimple(num_edge_features, edge_dim, dropout, doNorm)
         
-        self.message_passing = [GATv2ConvM(self.node_projector_dim, self.node_projector_dim, edge_dim = edge_dim, heads=n_heads, dropout = dropout, v2 = True, add_self_loops = False, aggr='add', bias=False) for in_chunk in in_chunks]
+        self.message_passing = [GATv2ConvM(self.node_projector_dim, self.node_projector_dim, edge_dim = edge_dim, heads=n_heads, dropout = dropout, v2 = True, add_self_loops = False, aggr='add', bias=False).to(device) for in_chunk in in_chunks]
                 
         self.LSTM = nn.LSTM(2*self.node_projector_dim,2*self.node_projector_dim,bidirectional=True, batch_first = True)
         
-        self.node_pred = InputProjectorSimple(4* n_heads*self.node_projector_dim, node_classes, dropout, doNorm)
+        self.node_pred = InputProjectorSimple(6* n_heads*self.node_projector_dim, node_classes, dropout, doNorm)
         
 
     def forward(self, data,return_attention_weights = None):
         x, edge_index, edge_attr = data.x, data.edge_index, data.edge_attr
         
         e = self.edge_projector(edge_attr)
-        
         combined_tensor = []
         for i,node_projector in enumerate(self.node_projector):
             sub_x = x[:,self.in_chunks_cumsum[i]:self.in_chunks_cumsum[i+1]]
-            sub_x = node_projector(sub_x)
+            sub_x = self.node_projector[i](sub_x)
             #sub_x = self.message_passing[i](sub_x, edge_index)
             sub_x = self.message_passing[i](sub_x, edge_index, edge_attr=e)
             sub_x = F.relu(sub_x)
             if self.doNorm:
                 sub_x = F.layer_norm(sub_x, sub_x.shape)
             sub_x = self.drop(sub_x)
+            #print(sub_x.shape)
             combined_tensor.append(sub_x)
         
-        combined_tensor = torch.stack(combined_tensor, dim=1)
+        combined_tensor = torch.cat(combined_tensor, dim=1)
+        #print(combined_tensor.shape)
 
-        output, (last_hidden, cell_state) = self.LSTM(combined_tensor)
-
-        x = self.node_pred(torch.cat((last_hidden[0], last_hidden[1]), dim=1))
+        #output, (last_hidden, cell_state) = self.LSTM(combined_tensor)
+        #x = self.node_pred(torch.cat((last_hidden[0], last_hidden[1]), dim=1))
+        x = self.node_pred(combined_tensor)
 
         return x

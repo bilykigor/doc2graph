@@ -7,6 +7,9 @@ from src.training.remittance import train_remittance
 from src.utils import create_folder, project_tree, set_preprocessing
 from src.training.pau import train_pau
 
+import nltk
+nltk.download('punkt')
+
 def seed_everything(seed=10):
     import os
     import random
