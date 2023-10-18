@@ -1,35 +1,120 @@
-import json
+
 import os
-from PIL import Image, ImageDraw
-from typing import Tuple
-import torch
-import dgl
+import json
 import random
 import numpy as np
 from tqdm import tqdm
-import xml.etree.ElementTree as ET
-import easyocr
 import cv2
 import math
+import xml.etree.ElementTree as ET
+
+import torch
+import easyocr
+import dgl
+from PIL import Image, ImageDraw
 
 from src.data.preprocessing import load_predictions, unnormalize_box
 from src.data.utils import polar
-from src.paths import DATA, FUNSD_TEST
 from src.utils import get_config
 from src.data.utils import intersectoin_by_axis
 from src.data.utils import find_dates, find_amounts, find_numbers, find_codes, find_word, find_words
+from typing import List, Tuple,Union
 
-def box_distance(box1, box2):
+
+def box_distance(box1: Tuple[int,int,int,int], 
+                 box2: Tuple[int,int,int,int])->float:
+    """Distance between centers of two boxes."""
+    if box1[0]>box2[2]:
+        x1_center = box1[0]
+        x2_center = box2[2]
+    elif box2[0]>box1[2]:
+        x1_center = box1[2]
+        x2_center = box2[0]
+    else:
         x1_center = (box1[0] + box1[2]) / 2
-        y1_center = (box1[1] + box1[3]) / 2
-        
         x2_center = (box2[0] + box2[2]) / 2
+        
+    if box1[1]>box2[3]:
+        y1_center = box1[1]
+        y2_center = box2[3]
+    elif box2[1]>box1[3]:
+        y1_center = box1[3]
+        y2_center = box2[1]
+    else:
+        y1_center = (box1[1] + box1[3]) / 2
         y2_center = (box2[1] + box2[3]) / 2
         
-        distance = math.sqrt((x2_center - x1_center)**2 + (y2_center - y1_center)**2)
-        
-        return distance
+    #distance = math.sqrt((x2_center - x1_center)**2 + (y2_center - y1_center)**2)
+    
+    distance = abs(x2_center - x1_center) + 2*abs(y2_center - y1_center)
+    
+    return distance
 
+
+def get_word_boxes(image_path):
+    import io
+    import requests
+    import base64
+    import json
+
+    pil_image = file_to_images(image_path)[0]
+    with io.BytesIO() as buffer:
+        pil_image.save(buffer, format='jpeg')
+        image_bytes = buffer.getvalue()
+        
+    data = {
+        "image_bytes":base64.b64encode(image_bytes).decode("utf8")
+    }
+
+    host = 'https://xiqo6syt8a.execute-api.us-east-1.amazonaws.com/paddleocr_textboxes/calc_embedding'
+    response = requests.post(f"{host}",
+                    data=json.dumps(data),
+                    headers={'content-type':'application/json',
+                            'x-amzn-RequestId': '84cad557-a68f-45db-9c01-79449f0aeecb'},#image/jpg
+                    timeout=29
+                    )
+    
+    ict_str = response.content.decode("UTF-8")
+    res = json.loads(ict_str)
+    return res
+    
+
+import fitz
+def file_to_images(file, gray=False):
+    if file[-3:].lower() == 'pdf':
+        imgs = []
+        
+        zoom = 3    # zoom factor
+        mat = fitz.Matrix(zoom, zoom)
+        
+        with fitz.open(file) as pdf:
+            for pno in range(pdf.page_count):
+                page = pdf.load_page(pno)
+                pix = page.get_pixmap(matrix=mat)
+                # if width or height > 2000 pixels, don't enlarge the image
+                #if pix.width > 2000 or pix.height > 2000:
+                #    pix = page.get_pixmap(matrix=fitz.Matrix(1, 1)
+                
+                mode = "RGBA" if pix.alpha else "RGB"                        
+                img = Image.frombytes(mode, [pix.width, pix.height], pix.samples)                        
+                
+                if gray:
+                    img = img.convert('L')
+                else:
+                    img = img.convert('RGB')
+                    
+                imgs.append(img)
+    else:
+        if gray:
+            img = Image.open(file).convert('L')
+        else:
+            img = Image.open(file).convert('RGB')
+            
+        imgs=[img]
+
+    return imgs
+
+    
 class GraphBuilder():
 
     def __init__(self):
@@ -40,7 +125,10 @@ class GraphBuilder():
         random.seed = 42
         return
     
-    def get_graph(self, src_path : str, src_data : str):
+    
+    def get_graph(self, 
+                  src_path : str,
+                  src_data : str):
         """ Given the source, it returns a graph
 
         Args:
@@ -61,11 +149,12 @@ class GraphBuilder():
             if self.data_type == 'img':
                 return self.__fromIMG(src_path)
             elif self.data_type == 'pdf':
-                return self.__fromPDF()
+                return self.__fromPDF(src_path)
             else:
                 raise Exception('GraphBuilder exception: data type invalid. Choose from ["img", "pdf"]')
         else:
             raise Exception('GraphBuilder exception: source data invalid. Choose from ["FUNSD", "PAU", "CUSTOM"]')
+    
     
     def balance_edges(self, g : dgl.DGLGraph, cls=None ):
         """ if cls (class) is not None, but an integer instead, balance that class to be equal to the sum of the other classes
@@ -102,13 +191,15 @@ class GraphBuilder():
         else:
             raise Exception("Select a class to balance (an integer ranging from 0 to num_edge_classes).")
     
+    
     def get_info(self):
-        """ returns graph information
+        """ Returns graph information.
         """
         print(f"-> edge type: {self.edge_type}")
 
+
     def fully_connected(self, ids : list):
-        """ create fully connected graph
+        """ Creates fully connected graph.
 
         Args:
             ids (list) : list of node indices
@@ -117,17 +208,21 @@ class GraphBuilder():
             u, v (lists) : lists of indices
         """
         u, v = list(), list()
-        for id in ids:
-            u.extend([id for i in range(len(ids)) if i != id])
-            v.extend([i for i in range(len(ids)) if i != id])
+        for id_ in ids:
+            u.extend([id for i in range(len(ids)) if i != id_])
+            v.extend([i for i in range(len(ids)) if i != id_])
         return u, v
     
-    def half_fully_connected(self, bboxs : list, texts: list, keep_n=-1):
-        """ create connected graph with connection allowed only to right and to bottom
+    
+    def half_fully_connected(self, 
+                             bboxs : List[Tuple[int,int,int,int]], 
+                             texts:  List[str], 
+                             max_depth=-1,
+                             kind='word_to_notword'):
+        """ Creates connected graph with connection allowed only to right and to bottom.
 
         Args:
-            bboxs (list) : list of bounding box coordinates
-            texts (list) : list of text in bboxs
+            max_depth : tree depth
         
         Returns:
             u, v (lists) : lists of indices
@@ -138,22 +233,33 @@ class GraphBuilder():
         u, v = list(), list()
         
         for ix, box in enumerate(bboxs):
-            boxes_to_right = [x for x in bboxs_with_id if 2*x[1][2]>=box[0]+box[2] and x[0]!=ix]
-            boxes_to_bottom = [x for x in boxes_to_right if 2*x[1][3]>=box[1]+box[3] and x[0]!=ix]
-            boxes_to_bottom = sorted(boxes_to_bottom,key=lambda x: x[1][1]*x[1][1]+x[1][0]*x[1][0], reverse=False)
+            boxes_to_right =  [x for x in bboxs_with_id  if x[1][2]>=(box[0]+box[2])*0.5 and x[0]!=ix]
+            boxes_to_bottom = [x for x in boxes_to_right if x[1][3]>=(box[1]+box[3])*0.5 and x[0]!=ix]
+            boxes_to_bottom = sorted(boxes_to_bottom,key=lambda x: pow(x[1][1],2)+pow(x[1][0],2), reverse=False)
             
             source_word = find_word(texts[ix]) or find_words(texts[ix])
             
             if boxes_to_bottom:
                 n_added=0
                 for box_to_bottom in boxes_to_bottom:
+                    if kind.split('_to_')[0]=='word':
+                        if not source_word:
+                            continue
+                    elif kind.split('_to_')[0]=='notword':
+                        if source_word:
+                            continue
+                        
                     target_word = find_word(texts[box_to_bottom[0]]) or find_words(texts[box_to_bottom[0]])
                     
-                    if target_word:
-                        continue
+                    if kind.split('_to_')[1]=='notword':    
+                        if target_word:
+                            continue
+                    elif kind.split('_to_')[1]=='word':    
+                        if not target_word:
+                            continue
                     
-                    if keep_n > 0:
-                        if n_added >= keep_n:
+                    if max_depth > 0:
+                        if n_added >= max_depth:
                             break
                     
                     n_added+=1            
@@ -162,12 +268,16 @@ class GraphBuilder():
         
         return u, v
 
-    def half_fully_connected2(self, bboxs : list, texts: list, keep_n=-1):
-        """ create connected graph with connection allowed only to left and to up
+
+    def half_fully_connected2(self, 
+                              bboxs : List[Tuple[int,int,int,int]], 
+                              texts:  List[str], 
+                              max_depth=-1,
+                              kind='word_to_notword'):
+        """ Creates connected graph with connection allowed only to left and to up.
 
         Args:
-            bboxs (list) : list of bounding box coordinates
-            texts (list) : list of text in bboxs
+            max_depth : tree depth
         
         Returns:
             u, v (lists) : lists of indices
@@ -179,13 +289,24 @@ class GraphBuilder():
         
         for ix, box in enumerate(bboxs):
             source_number = find_dates(texts[ix]) or find_amounts(texts[ix]) or find_numbers(texts[ix]) or find_codes(texts[ix])
+            source_word = find_word(texts[ix]) or find_words(texts[ix])
             
-            if not source_number:
-                continue
+            if kind.split('_to_')[0]=='word':
+                if kind.split('_to_')[0]=='word':
+                    if not source_word:
+                        continue
+                if kind.split('_to_')[0]=='notword':
+                    if source_word:
+                        continue
+                # if not source_number:
+                #     continue
             
-            boxes_to_left = [x for x in bboxs_with_id if 2*x[1][0]<=box[0]+box[2] and x[0]!=ix]
-            boxes_to_up = [x for x in boxes_to_left if 2*x[1][1]<=box[1]+box[3] and x[0]!=ix]
-            boxes_to_up = sorted(boxes_to_up,key=lambda x: x[1][1]*x[1][1]+x[1][0]*x[1][0], reverse=True)
+            box_xcenter = (box[0]+box[2])*0.5
+            box_ycenter = (box[1]+box[3])*0.5
+            
+            boxes_to_left = [x for x in bboxs_with_id if x[1][0]<=box_xcenter and x[0]!=ix]
+            boxes_to_up =   [x for x in boxes_to_left if x[1][1]<=box_ycenter and x[0]!=ix]
+            boxes_to_up = sorted(boxes_to_up,key=lambda x: box_distance(x[1],box), reverse=False)
             
             if boxes_to_up:
                 n_added=0
@@ -193,13 +314,18 @@ class GraphBuilder():
                 for box_to_up in boxes_to_up:
                     target_word = find_word(texts[box_to_up[0]]) or find_words(texts[box_to_up[0]])
                     
-                    if not target_word:
-                        continue
+                    if kind.split('_to_')[1]=='notword':    
+                        if target_word:
+                            continue
+                    elif kind.split('_to_')[1]=='word':    
+                        if not target_word:
+                            continue
                     
-                    if keep_n > 0:
-                        if n_added >= keep_n:
+                    if max_depth > 0:
+                        if n_added >= max_depth:
                             break
                     
+                    # stop if distance increases significantly
                     curr_dist = box_distance(box_to_up[1], box)   
                     if prev_dist:
                         if curr_dist>prev_dist*1.5:
@@ -208,6 +334,8 @@ class GraphBuilder():
                     n_added+=1            
                     u.append(ix)
                     v.append(box_to_up[0])
+                    
+                    #print(texts[ix],'->',texts[box_to_up[0]])
                     
                     prev_dist = curr_dist
         
@@ -356,46 +484,58 @@ class GraphBuilder():
     def __fromIMG(self, paths : list):
         
         graphs, node_labels, edge_labels = list(), list(), list()
-        features = {'paths': paths, 'texts': [], 'boxs': []}
+        features = {
+            'paths': paths, 
+            'texts': [], 
+            'boxs': []
+            }
 
         for path in paths:
-            reader = easyocr.Reader(['en']) #! TODO: in the future, handle multilanguage!
-            result = reader.readtext(path, 
-                             min_size=10, 
-                            slope_ths=0.2, 
-                            ycenter_ths=0.5, 
-                            height_ths=0.5, 
-                            width_ths=0.5,
-                            decoder='wordbeamsearch', 
-                            beamWidth=10, )
+            # reader = easyocr.Reader(['en']) #! TODO: in the future, handle multilanguage!
+            # result = reader.readtext(path, 
+            #                  min_size=10, 
+            #                 slope_ths=0.2, 
+            #                 ycenter_ths=0.5, 
+            #                 height_ths=0.5, 
+            #                 width_ths=0.5,
+            #                 decoder='wordbeamsearch', 
+            #                 beamWidth=10, )
             
             img = Image.open(path).convert('RGB')
-            draw = ImageDraw.Draw(img)
-            boxs, texts = list(), list()
+            size = img.size
+            #draw = ImageDraw.Draw(img)
+            # boxs, texts = list(), list()
 
-            for r in result:
-                box = [int(r[0][0][0]), int(r[0][0][1]), int(r[0][2][0]), int(r[0][2][1])]
-                draw.rectangle(box, outline='red', width=3)
-                boxs.append(box)
-                texts.append(r[1])
+            # for r in result:
+            #     box = [int(r[0][0][0]), int(r[0][0][1]), int(r[0][2][0]), int(r[0][2][1])]
+            #     draw.rectangle(box, outline='red', width=3)
+            #     boxs.append(box)
+            #     texts.append(r[1])
+            
+            word_boxes = get_word_boxes(path)
+            boxs = word_boxes['boxes']
+            boxs = [unnormalize_box(box, size[0], size[1]) for box in boxs]
+            texts = word_boxes['words']
 
             features['boxs'].append(boxs)
             features['texts'].append(texts)
-            img.save('prova.png')
+            #img.save('prova.png')
 
-            if self.edge_type == 'fully':
-                u, v = self.fully_connected(range(len(boxs)))
-            elif self.edge_type == 'knn': 
-                u,v = self.knn_connection(Image.open(path).size, boxs)
-            else:
-                raise Exception('Other edge types still under development.')
+            # if self.edge_type == 'fully':
+            #     u, v = self.fully_connected(range(len(boxs)))
+            # elif self.edge_type == 'knn': 
+            #     u,v = self.knn_connection(Image.open(path).size, boxs)
+            # else:
+            #     raise Exception('Other edge types still under development.')
+            
+            u, v = self.half_fully_connected2(boxs, texts, 1, 'word_to_word')
 
             g = dgl.graph((torch.tensor(u), torch.tensor(v)), num_nodes=len(boxs), idtype=torch.int32)
             graphs.append(g)
 
         return graphs, node_labels, edge_labels, features
     
-    def __fromPDF():
+    def __fromPDF(self, src: str):
         #TODO: dev from PDF import of graphs
         return
 

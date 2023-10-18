@@ -1,8 +1,8 @@
 name: GAT
-dropout: 0.2
+dropout: 0
 n_heads: 1
 node_projector_dim: 128
 edge_projector_dim: 128
 num_layers: 1
-doProject: True
+doProject: False
 doNorm: False

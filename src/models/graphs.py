@@ -62,8 +62,7 @@ class SetModel():
             m = E2E(nodes, edges, self.cfg_model.num_layers, self.cfg_model.dropout, chunks, self.cfg_model.out_chunks, self.cfg_model.hidden_dim, self.device,  edge_pred_features, self.cfg_model.doProject)
         
         elif self.name == 'GAT':
-            edge_pred_features = int((math.log2(get_config('preprocessing').FEATURES.num_polar_bins) + nodes)*2)
-            m = GATLSTM(nodes, edges, self.cfg_model.n_heads, self.cfg_model.dropout, chunks, self.cfg_model.node_projector_dim, self.cfg_model.edge_projector_dim, self.device,  edge_pred_features, self.cfg_model.doProject, self.cfg_model.doNorm)
+            m = GAT(nodes, edges, self.cfg_model.n_heads, self.cfg_model.dropout, chunks, self.cfg_model.node_projector_dim, self.cfg_model.edge_projector_dim, self.device, self.cfg_model.doProject, self.cfg_model.doNorm)
 
         else:
             raise Exception(f"Error! Model {self.name} do not exists.")
@@ -209,7 +208,6 @@ class GAT(nn.Module):
                        node_projector_dim, 
                        edge_projector_dim,
                        device,
-                       edge_pred_features,
                        doProject=True, 
                        doNorm = True):
 
@@ -224,7 +222,10 @@ class GAT(nn.Module):
         self.doProject = doProject
         self.doNorm = doNorm
         
-        self.drop = nn.Dropout(dropout)
+        if dropout>0:
+            self.drop = nn.Dropout(dropout)
+        else:
+            self.drop = None
 
         m_hidden = sum(in_chunks)
         self.node_dim = node_projector_dim if self.node_projector_dim>0 else self.num_node_features
@@ -235,7 +236,7 @@ class GAT(nn.Module):
             self.node_projector = InputProjectorSimple(m_hidden, self.node_dim, dropout, doNorm)
             self.edge_projector = InputProjectorSimple(num_edge_features, edge_dim, dropout, doNorm)
                 
-            #self.message_passing =GcnSAGELayer(m_hidden, m_hidden, F.relu, dropout)
+            #self.message_passing = GcnSAGELayer(m_hidden, m_hidden, F.relu, dropout)
             #self.message_passing = GCNConv(self.node_dim, self.node_dim, edge_dim = edge_dim, heads=n_heads, dropout = dropout, v2 = True, improved = True, normalize = False, add_self_loops = False, bias = False, aggr='add')
             self.message_passing = GATv2ConvM(self.node_dim, self.node_dim, edge_dim = edge_dim, heads=n_heads, dropout = dropout, v2 = True, add_self_loops = False, aggr='add', bias=False)
             #self.message_passing = SAGEConvM(self.node_dim, self.node_dim, project = True)
@@ -245,7 +246,7 @@ class GAT(nn.Module):
         self.node_pred = InputProjectorSimple(2* n_heads*self.node_dim, node_classes, dropout, doNorm)
         
 
-    def forward(self, data,return_attention_weights = None):
+    def forward(self, data, return_attention_weights = None):
         x, edge_index, edge_attr = data.x, data.edge_index, data.edge_attr
         
         if self.doProject:
@@ -259,7 +260,9 @@ class GAT(nn.Module):
         x = F.relu(x)
         if self.doNorm:
             x = F.layer_norm(x, x.shape)
-        x = self.drop(x)
+            
+        if self.drop:
+            x = self.drop(x)
 
         x = self.node_pred(x)
         

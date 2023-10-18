@@ -1,6 +1,5 @@
 from typing import Optional, Tuple, Union
 
-import math
 import torch
 import torch.nn.functional as F
 from torch import Tensor
@@ -60,16 +59,6 @@ class GATv2Conv(MessagePassing):
         self.fill_value = fill_value
         self.share_weights = share_weights
 
-        # self.Q = Linear(heads * out_channels, heads * out_channels,
-        #                 bias=False, weight_initializer='glorot')
-        
-        # self.K = Linear(heads * out_channels + heads * out_channels + 1, heads * out_channels,
-        #                 bias=False, weight_initializer='glorot')
-        
-        # self.V = Linear(heads * out_channels, heads * out_channels,
-        #                 bias=False, weight_initializer='glorot')
-        
-        
         if isinstance(in_channels, int):
             self.lin_l = Linear(in_channels, heads * out_channels, bias=bias,
                                 weight_initializer='glorot')
@@ -132,7 +121,6 @@ class GATv2Conv(MessagePassing):
         """
         H, C = self.heads, self.out_channels
 
-
         x_l = x.view(-1, H, C)
         x_r = x_l
         
@@ -178,9 +166,9 @@ class GATv2Conv(MessagePassing):
         out = self.propagate(edge_index, x=(x_l, x_r), edge_attr=edge_attr,
                              size=None)
 
-        alpha = self._alpha
-        assert alpha is not None
-        self._alpha = None
+        # alpha = self._alpha
+        # assert alpha is not None
+        # self._alpha = None
 
         if self.concat:
             out = out.view(-1, self.heads * self.out_channels * 2)
@@ -206,39 +194,29 @@ class GATv2Conv(MessagePassing):
     def message(self, x_j: Tensor, x_i: Tensor, edge_attr: OptTensor,
                 index: Tensor, ptr: OptTensor,
                 size_i: Optional[int]) -> Tensor:
-        x = x_i + x_j
-        
-        reshaped_index = index.unsqueeze(1).unsqueeze(1)
-        
-        if edge_attr is not None:
-            if edge_attr.dim() == 1:
-                edge_attr = edge_attr.view(-1, 1)
-            assert self.lin_edge is not None
-            
-            edge_attr = self.lin_edge(edge_attr)
-            edge_attr = edge_attr.view(-1, self.heads, self.out_channels)
-            x = x + edge_attr
-           
-        # Q = self.Q(x_i)
-        # K = self.K(torch.cat([x_j,reshaped_index, edge_attr],dim=2))
-        # V = self.V(x_j)
-        
-        # QK = torch.matmul(Q.permute(1, 2, 0), K.permute(1, 0, 2))
-        # d_k = Q.shape[-1]
-        # QK = QK / math.sqrt(d_k)
-        # QKV = torch.matmul(V.permute(1, 0, 2),QK).permute(1, 0, 2)
-        
-        #x = torch.cat([x_j, x_i, edge_attr],dim=2)
-        
-        x = F.leaky_relu(x, self.negative_slope)
-        alpha = (x * self.att).sum(dim=-1)
-        alpha = softmax(alpha, index, ptr, size_i)
-        self._alpha = alpha
-        alpha = F.dropout(alpha, p=self.dropout, training=self.training)
-        return x_j * alpha.unsqueeze(-1)
+        # x = x_i + x_j
+
+        # if edge_attr is not None:
+        #     if edge_attr.dim() == 1:
+        #         edge_attr = edge_attr.view(-1, 1)
+        #     assert self.lin_edge is not None
+        #     edge_attr = self.lin_edge(edge_attr)
+        #     edge_attr = edge_attr.view(-1, self.heads, self.out_channels)
+        #     x = x + edge_attr
+
+        # x = F.leaky_relu(x, self.negative_slope)
+        # alpha = (x * self.att).sum(dim=-1)
+        # alpha = softmax(alpha, index, ptr, size_i)
+        # self._alpha = alpha
+        # alpha = F.dropout(alpha, p=self.dropout, training=self.training)
+        # return x_j * alpha.unsqueeze(-1)
+        return x_j
     
     def update(self, aggr_out, x):
+        #print(x[0].shape)
+        #print(aggr_out.shape)
         out = torch.cat([x[0],aggr_out],dim=2)
+        #print(out.shape)
         return out
 
     def __repr__(self) -> str:
