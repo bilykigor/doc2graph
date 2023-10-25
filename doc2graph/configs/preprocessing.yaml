@@ -1,0 +1,18 @@
+FEATURES:
+  add_edist: false
+  add_embs: true
+  add_epolar: false
+  add_eshared: false
+  add_fudge: false
+  add_geom: false
+  add_hist: false
+  add_mask: false
+  add_size: false
+  add_visual: false
+  num_polar_bins: 8
+GRAPHS:
+  data_type: img
+  edge_type: fully
+  node_granularity: gt
+LOADER:
+  src_data: REMITTANCE

@@ -9,7 +9,6 @@ cc.*
 *.DS_Store
 
 #user-defined
-DATA
 _old
 *.env
 outputs
@@ -21,3 +20,4 @@ src/models/yolov5
 src/models/checkpoints
 prova*
 inference
+__pycache__
