@@ -1,6 +1,6 @@
 import random
 from typing import Tuple
-import spacy
+#import spacy
 import torch
 import torchvision
 import numpy as np
@@ -14,13 +14,11 @@ import dgl
 
 #from doc2graph.src.paths import CHECKPOINTS
 from doc2graph.src.models.unet import Unet
-from doc2graph.src.data.utils import to_bin, to_bin2
+from doc2graph.src.data.utils import to_bin, to_bin2, file_to_images
 from doc2graph.src.data.utils import polar, get_histogram, polar2, polar3, intersectoin_by_axis, find_dates, find_amounts, find_numbers, find_codes, find_word, find_words
 from doc2graph.src.utils import get_config
 from doc2graph.src.data.preprocessing import normalize_box
 
-#text_embedder = spacy.load('en_core_web_lg')
-text_embedder = SentenceTransformer('paraphrase-multilingual-MiniLM-L12-v2')
 
 def text_to_mask(text):
     emb=[0,0,0,0,0,0]
@@ -51,11 +49,7 @@ def text_to_mask(text):
     
 #     return np.zeros(300, dtype=np.float32)
 
-def text_to_embedding(text):
-    #if find_word(text) or find_words(text):
-    return text_embedder.encode(text, convert_to_tensor=False)
-    
-    #return np.zeros(384, dtype=np.float32)
+
 
 class FeatureBuilder():
 
@@ -92,7 +86,9 @@ class FeatureBuilder():
         self.num_polar_bins = num_polar_bins #self.cfg_preprocessing.FEATURES.num_polar_bins
 
         if self.add_embs:
-            self.text_embedder = text_to_embedding
+            #text_embedder = spacy.load('en_core_web_lg')
+            self.text_embedder_core = SentenceTransformer('paraphrase-multilingual-MiniLM-L12-v2')
+            self.text_embedder = self.text_to_embedding
             
         self.mask_embedder = text_to_mask
 
@@ -103,6 +99,12 @@ class FeatureBuilder():
         #     self.visual_embedder.to(d)
         
         self.sg = lambda rect, s : [rect[0]/s[0], rect[1]/s[1], rect[2]/s[0], rect[3]/s[1]] # scaling by img width and height
+    
+    def text_to_embedding(self, text):
+        #if find_word(text) or find_words(text):
+        return self.text_embedder_core.encode(text, convert_to_tensor=False)
+        
+        #return np.zeros(384, dtype=np.float32)
     
     def add_features(self, 
                      graphs : List, 
@@ -120,7 +122,7 @@ class FeatureBuilder():
         for id, g in enumerate(tqdm(graphs, desc='adding features')):
 
             # positional features
-            size = Image.open(features['paths'][id]).size
+            size = file_to_images(features['paths'][id])[0].size
             feats = [[] for _ in range(g.num_nodes())]
             efeats = [[] for _ in range(g.num_edges())]
             #geom = [self.sg(box, size) for box in features['boxs'][id]]

@@ -12,13 +12,12 @@ import torch
 #import easyocr
 import dgl
 from PIL import Image, ImageDraw
-import fitz
+
 
 from doc2graph.src.data.preprocessing import unnormalize_box
 from doc2graph.src.data.utils import polar
 from doc2graph.src.utils import get_config
-from doc2graph.src.data.utils import intersectoin_by_axis
-from doc2graph.src.data.utils import find_dates, find_amounts, find_numbers, find_codes, find_word, find_words
+from doc2graph.src.data.utils import intersectoin_by_axis, find_dates, find_amounts, find_numbers, find_codes, find_word, find_words, file_to_images
 from typing import List, Tuple
 from sklearn.metrics import pairwise_distances
 
@@ -79,41 +78,6 @@ def get_word_boxes(image_path, host):
     res = json.loads(ict_str)
     return res
     
-
-def file_to_images(file, gray=False):
-    if file[-3:].lower() == 'pdf':
-        imgs = []
-        
-        zoom = 3    # zoom factor
-        mat = fitz.Matrix(zoom, zoom)
-        
-        with fitz.open(file) as pdf:
-            for pno in range(pdf.page_count):
-                page = pdf.load_page(pno)
-                pix = page.get_pixmap(matrix=mat)
-                # if width or height > 2000 pixels, don't enlarge the image
-                #if pix.width > 2000 or pix.height > 2000:
-                #    pix = page.get_pixmap(matrix=fitz.Matrix(1, 1)
-                
-                mode = "RGBA" if pix.alpha else "RGB"                        
-                img = Image.frombytes(mode, [pix.width, pix.height], pix.samples)                        
-                
-                if gray:
-                    img = img.convert('L')
-                else:
-                    img = img.convert('RGB')
-                    
-                imgs.append(img)
-    else:
-        if gray:
-            img = Image.open(file).convert('L')
-        else:
-            img = Image.open(file).convert('RGB')
-            
-        imgs=[img]
-
-    return imgs
-
 
 def has_xy_intersection(box, neighbor_boxes, min_share = 0.8):
     for neighbor_box in neighbor_boxes:

@@ -4,11 +4,48 @@ import cv2
 import numpy as np
 import torch
 import math
+import fitz
+from PIL import Image, ImageDraw
 # import re
 # from nltk.tokenize import word_tokenize
 # from price_parser import Price
 # import dateparser
 #import torchvision.ops.boxes as bops
+
+
+def file_to_images(file, gray=False):
+    if file[-3:].lower() == 'pdf':
+        imgs = []
+        
+        zoom = 3    # zoom factor
+        mat = fitz.Matrix(zoom, zoom)
+        
+        with fitz.open(file) as pdf:
+            for pno in range(pdf.page_count):
+                page = pdf.load_page(pno)
+                pix = page.get_pixmap(matrix=mat)
+                # if width or height > 2000 pixels, don't enlarge the image
+                #if pix.width > 2000 or pix.height > 2000:
+                #    pix = page.get_pixmap(matrix=fitz.Matrix(1, 1)
+                
+                mode = "RGBA" if pix.alpha else "RGB"                        
+                img = Image.frombytes(mode, [pix.width, pix.height], pix.samples)                        
+                
+                if gray:
+                    img = img.convert('L')
+                else:
+                    img = img.convert('RGB')
+                    
+                imgs.append(img)
+    else:
+        if gray:
+            img = Image.open(file).convert('L')
+        else:
+            img = Image.open(file).convert('RGB')
+            
+        imgs=[img]
+
+    return imgs
 
 
 def intersectoin_by_axis(axis: str, rect_src : list, rect_dst : list):
