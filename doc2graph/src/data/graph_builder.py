@@ -20,20 +20,34 @@ from doc2graph.src.utils import get_config
 from doc2graph.src.data.utils import intersectoin_by_axis, find_dates, find_amounts, find_numbers, find_codes, find_word, find_words, file_to_images
 from typing import List, Tuple
 from sklearn.metrics import pairwise_distances
+from functools import cmp_to_key
+
+def compare_items(a, b):
+    if intersectoin_by_axis('x',a[1],b[1])>0.4: #if boxes on same level, compare by x
+        return a[1][0]-b[1][0]
+    return a[1][1]-b[1][1] 
+
+center = lambda rect: ((rect[2]+rect[0])/2, (rect[3]+rect[1])/2)
 
 
-def box_distance(box1: Tuple[int,int,int,int], 
-                 box2: Tuple[int,int,int,int])->float:
+def box_distance(box_left: Tuple[int,int,int,int], 
+                 box_right: Tuple[int,int,int,int],
+                 verbose=False)->float:
     """Distance between centers of two boxes."""
-    y_intersectoin = intersectoin_by_axis('y',box1, box2)
-    x_intersectoin = intersectoin_by_axis('x',box1, box2)
+    y_intersectoin = intersectoin_by_axis('y',box_left, box_right)
+    x_intersectoin = intersectoin_by_axis('x',box_left, box_right)
     
-    x1_center = (box1[0] + box1[2]) / 2
-    x2_center = (box2[0] + box2[2]) / 2
-    y1_center = (box1[1] + box1[3]) / 2
-    y2_center = (box2[1] + box2[3]) / 2
+    x1_center = (box_left[0] + box_left[2]) / 2
+    x2_center = (box_right[0] + box_right[2]) / 2
+    y1_center = (box_left[1] + box_left[3]) / 2
+    y2_center = (box_right[1] + box_right[3]) / 2
         
-    x_dist = abs(box1[0] - box2[0]) * (1-y_intersectoin)
+    x_dist = (box_right[0] - box_left[2]) 
+    if x_dist<0:
+        x_dist = (box_right[2] - box_left[2]) 
+        
+    #x_dist = x_dist * (1-y_intersectoin)
+    
     # if y_intersectoin>0.25:
     #     x_dist = 0
     # else:
@@ -47,6 +61,8 @@ def box_distance(box1: Tuple[int,int,int,int],
         
     #distance = math.sqrt((x2_center - x1_center)**2 + (y2_center - y1_center)**2)
     
+    if verbose:
+        print(x_dist,y_dist)
     distance = x_dist + 3*y_dist
     
     return distance
@@ -160,14 +176,24 @@ def merge_boxes(boxes):
     ]
 
 
+def ccw(A, B, C):
+    """Check if points are listed in counter-clockwise order."""
+    return (C[1] - A[1]) * (B[0] - A[0]) > (B[1] - A[1]) * (C[0] - A[0])
+
+
+def intersect(A, B, C, D):
+    """Check if line segments AB and CD intersect."""
+    return ccw(A, C, D) != ccw(B, C, D) and ccw(A, B, C) != ccw(A, B, D)
+
+
 def remove_diag_edges(boxes, u, v):
     min_share = 0.8
     links = {'src':[],'dst':[]}
-    for i in range(len(boxes)):
+    for i, box in enumerate(boxes):
         neighbors = neighbors_idx(i, u, v)
         
-        if has_xy_intersection(boxes[i], [boxes[ix] for ix in neighbors], min_share):
-            neighbors = [ix for ix in neighbors if max(intersectoin_by_axis('x',boxes[i], boxes[ix]), intersectoin_by_axis('y',boxes[i], boxes[ix]))>=min_share]
+        if has_xy_intersection(box, [boxes[ix] for ix in neighbors], min_share):
+            neighbors = [ix for ix in neighbors if max(intersectoin_by_axis('x',box, boxes[ix]), intersectoin_by_axis('y',box, boxes[ix]))>=min_share]
 
         links['src'].extend([i]*len(neighbors))
         links['dst'].extend(neighbors)
@@ -180,14 +206,153 @@ def remove_diag_edges(boxes, u, v):
     return links['src'], links['dst']
 
 
+def remove_diag_edges2(boxes, u, v, words, min_share):
+    min_share = 0.8
+    links = {'src':[],'dst':[]}
+    for i, box in enumerate(boxes):
+        # if not '11/2023' in words[i]:
+        #     continue
+        # print(words[i])
+        
+        neighbors = neighbors_idx(i, u, v)
+        
+        # boxes_to_left = [ix for ix in neighbors if 
+        #                  boxes[ix][0]<=box[2]
+        #                 ]
+        # neighbors = [ix for ix in boxes_to_left if 
+        #                  boxes[ix][1]<=box[3]
+        #                 ]
+        
+        boxes_to_left = [ix for ix in neighbors if 
+                             (
+                                (
+                                   (0.5*(boxes[ix][0]+boxes[ix][2])<=box[2]) or #center of boxes left to right edge
+                                   (intersectoin_by_axis('y',boxes[ix], box)>min_share) #intesects on y
+                                )
+                                and (ix!=i)
+                             )]
+            
+        boxes_to_up =   [ix for ix in boxes_to_left if 
+                            (
+                            (
+                                (0.5*(boxes[ix][1]+boxes[ix][3])<=box[3]) or #center of boxes left to right edge
+                                (intersectoin_by_axis('x',boxes[ix], box)>min_share) #intesects on x
+                            )
+                            and (ix!=i)
+                            )]
+            
+        neighbors = boxes_to_up
+        
+        if len(neighbors)<=2:
+            if neighbors:
+                links['src'].extend([i]*len(neighbors))
+                links['dst'].extend(neighbors)
+                links['dst'].extend([i]*len(neighbors))
+                links['src'].extend(neighbors)
+        else:           
+            min_share = 0.5
+            top_neighbors = [ix for ix in neighbors if intersectoin_by_axis('y',box, boxes[ix])>=min_share]
+            if top_neighbors:
+                top_neighbor = sorted(top_neighbors,key=lambda ix: box_distance(boxes[ix],box), reverse=False)[0]
+            else:
+                top_neighbor = None
+            
+            left_neighbors = [ix for ix in neighbors if intersectoin_by_axis('x',box, boxes[ix])>=min_share]
+            if left_neighbors:
+                left_neighbor = sorted(left_neighbors,key=lambda ix: box_distance(boxes[ix],box), reverse=False)[0]
+            else:
+                left_neighbor = None
+                
+            if left_neighbor and top_neighbor:
+                links['src'].extend([i,i,left_neighbor,top_neighbor])
+                links['dst'].extend([left_neighbor,top_neighbor,i,i])
+            else:
+                neighbors = sorted(neighbors,key=lambda ix: box_distance(boxes[ix],box), reverse=False)
+                
+                neighbors = neighbors[:2]
+                
+                if neighbors:
+                    links['src'].extend([i]*len(neighbors))
+                    links['dst'].extend(neighbors)
+                    links['dst'].extend([i]*len(neighbors))
+                    links['src'].extend(neighbors)
+        
+    slinks = set((u,v) for u,v in zip(links['src'],links['dst']))
+    slinks = [x for x in slinks if (x[1],x[0]) in slinks]
+    links = {'src': [x[0] for x in slinks], 
+    'dst': [x[1] for x in slinks] }
+    
+    return links['src'], links['dst']
+
+
+def sin(x1,y1,x2,y2):
+    if x2-x1==0:
+        return 1
+    return abs(y2-y1)/abs(x2-x1)
+
+
+def remove_intersected_edges(boxes, u, v):
+    links = {'src':[],'dst':[]}
+    n = len(u)
+    for i in range(n):
+        intersected = False
+        line1 = [center(boxes[u[i]]), center(boxes[v[i]])]
+        
+        s1 = sin(line1[0][0],line1[0][1],line1[1][0],line1[1][1])
+        if s1:
+            for j in range(i,n):
+                line2 = [center(boxes[u[j]]), center(boxes[v[j]])]
+                s2 = sin(line2[0][0],line2[0][1],line2[1][0],line2[1][1])
+                
+                if intersect(line1[0], line1[1], line2[0], line2[1]):
+                    if (s2 is None) or (s1<s2):
+                        intersected = True
+                        break
+            
+        if not intersected:
+            links['src'].extend([u[i],v[i]])
+            links['dst'].extend([v[i],u[i]])
+        
+    slinks = set((u,v) for u,v in zip(links['src'],links['dst']))
+    slinks = [x for x in slinks if (x[1],x[0]) in slinks]
+    links = {'src': [x[0] for x in slinks], 
+    'dst': [x[1] for x in slinks] }
+    
+    return links['src'], links['dst']
+
+
+def remove_vertical_edges(boxes, u, v):
+    links = {'src':[],'dst':[]}
+    n = len(u)
+    for i in range(n):
+        box1 = boxes[u[i]]
+        box2 = boxes[v[i]]
+        height_box1 = abs(box1[1]-box1[3])
+        height_box2 = abs(box2[1]-box2[3])
+        height = max(height_box1,height_box2)
+        c1 = center(box1)
+        c2 = center(box2)
+        
+        if abs(c2[1]-c1[1])<3*height:
+            links['src'].extend([u[i],v[i]])
+            links['dst'].extend([v[i],u[i]])
+        
+    slinks = set((u,v) for u,v in zip(links['src'],links['dst']))
+    slinks = [x for x in slinks if (x[1],x[0]) in slinks]
+    links = {'src': [x[0] for x in slinks], 
+    'dst': [x[1] for x in slinks] }
+    
+    return links['src'], links['dst']
+
+
 def remove_notline_edges(boxes, u, v):
     min_share = 0.8
     links = {'src':[],'dst':[]}
-    for i in range(len(boxes)):
+    for i, box in enumerate(boxes):
         neighbors = neighbors_idx(i, u, v)
         neighbors_boxes =  [boxes[ix] for ix in neighbors]
         
-        if has_x_intersection(boxes[i], neighbors_boxes, min_share):
+        if has_x_intersection(box, neighbors_boxes, min_share):
             new_neighbors = []
             for j in neighbors:
                 j_neighbors = neighbors_idx(j, u, v)
@@ -246,28 +411,33 @@ def remove_long_edges(boxes, u, v, d_mult = 3):
 
 
 def filter_boxes_up(box, box_main, boxes_to_up, boxes_x_intersected, boxes_y_intersected,texts):
+    #print(texts[box[0]])
+    #print('before',[texts[x[0]] for x in boxes_to_up])
     if box in boxes_x_intersected:
         boxes_to_up = [x for x in boxes_to_up if 
                         ((x[1][2]+x[1][0]>2*box[1][2]) or 
-                        (intersectoin_by_axis('y',x[1], box[1])>0.8))
+                        (intersectoin_by_axis('y',x[1], box[1])>0.8)) and
+                        (intersectoin_by_axis('x',x[1], box_main)<0.5)  #avoid 2 connections on x
                         ]
-        #print('left',texts[box[0]])
+        #print('x',[texts[x[0]] for x in boxes_to_up])
     elif box in boxes_y_intersected:
         boxes_to_up = [x for x in boxes_to_up if 
                         ((x[1][3]+x[1][1]>2*box[1][3]) or 
-                        (intersectoin_by_axis('x',x[1], box[1])>0.8))
+                        (intersectoin_by_axis('x',x[1], box[1])>0.8)) and 
+                        (intersectoin_by_axis('y',x[1], box_main)<0.5) #avoid 2 connections on y
                         ]
-        # print('up',texts[box[0]])
-        # print('up',[texts[x[0]] for x in boxes_to_up if 
-        #                 ((x[1][3]+x[1][1]>2*box[1][3]) or 
-        #                 (intersectoin_by_axis('x',x[1], box[1])>0.8))
-        #                 ])
+        #print('y',[texts[x[0]] for x in boxes_to_up])
     else:
-        #print('diag',texts[box[0]])
-        boxes_to_up = [x for x in boxes_to_up if 
-                       (max(intersectoin_by_axis('x',x[1], box[1]), intersectoin_by_axis('y',x[1], box[1]))<0.1) or
-                       (max(intersectoin_by_axis('x',x[1], box_main), intersectoin_by_axis('y',x[1], box_main))>0.8)
-                       ]
+        boxes_to_up =    [x for x in boxes_to_up if 
+                             max(intersectoin_by_axis('x',x[1], box_main), intersectoin_by_axis('y',x[1], box_main))>0.8  #intersected with main
+                             or 
+                             (
+                                 max(intersectoin_by_axis('x',x[1], box[1]), intersectoin_by_axis('y',x[1], box[1]))<0.1 and #not intersected with diag
+                                 not ((x[1][0]<box[1][2]) and (x[1][1]<box[1][3])) # not in 4th quater
+                             )
+                             ]
+        #print('z',[texts[x[0]] for x in boxes_to_up])
+        
         
     return boxes_to_up      
      
@@ -393,15 +563,15 @@ class GraphBuilder():
         u, v = list(), list()
         
         for ix, box_main in enumerate(bboxs):
-            source_number = find_dates(texts[ix]) or find_amounts(texts[ix]) or find_numbers(texts[ix]) or find_codes(texts[ix])
+            #source_number = find_dates(texts[ix]) or find_amounts(texts[ix]) or find_numbers(texts[ix]) or find_codes(texts[ix])
             source_word = find_word(texts[ix]) or find_words(texts[ix])
             
-            # if '00' not in texts[ix]:
+            # if ix>5:
+            #    continue
+            
+            # if '78.40' not in texts[ix]:
             #     continue
-        
-            # if ix<=57:
-            #     continue
-            # print(ix,texts[ix])
+            #print(ix,texts[ix])
             
             if kind.split('_to_')[0]=='word':
                 if not source_word:
@@ -412,108 +582,181 @@ class GraphBuilder():
             # if not source_number:
             #     continue
             
-            box_xcenter = (box_main[0]+box_main[2])*0.5
-            box_ycenter = (box_main[1]+box_main[3])*0.5
-            
             prev_dist = None
                         
             #===========================================================================
-            #boxes_to_left = [x for x in bboxs_with_id if x[1][0]<=box_xcenter and x[0]!=ix]
-            #boxes_to_up =   [x for x in boxes_to_left if x[1][1]<=box_ycenter and x[0]!=ix]
-            boxes_to_left = [x for x in bboxs_with_id if 
-                             (((0.5*(x[1][0]+x[1][2])<=box_main[2]) or 
-                              (intersectoin_by_axis('y',x[1], box_main)>0.8))
-                             and (x[0]!=ix))]
-            boxes_to_up =   [x for x in boxes_to_left if 
-                             (((0.5*(x[1][1]+x[1][3])<=box_main[3]) or
-                             (intersectoin_by_axis('x',x[1], box_main)>0.8))
-                             and (x[0]!=ix))]
-            boxes_to_up = sorted(boxes_to_up,key=lambda x: box_distance(x[1],box_main), reverse=False)
+            min_share = 0.4
             
-            min_share = 0.8
+            boxes_to_left = [x for x in bboxs_with_id if 
+                             (
+                                (
+                                   (0.5*(x[1][0]+x[1][2])<=box_main[2]) or #center of boxes left to right edge
+                                   (intersectoin_by_axis('y',x[1], box_main)>min_share) #intesects on y
+                                )
+                                and (x[0]!=ix)
+                             )]
+            
+            boxes_to_up =   [x for x in boxes_to_left if 
+                             (
+                                (
+                                    (0.5*(x[1][1]+x[1][3])<=box_main[3]) or #center of boxes left to right edge
+                                    (intersectoin_by_axis('x',x[1], box_main)>min_share) #intesects on x
+                                )
+                                and (x[0]!=ix)
+                             )]
+            boxes_to_up = sorted(boxes_to_up,key=lambda x: box_distance(x[1],box_main), reverse=False)
+            # if 'Summer' in texts[ix]:
+            #     print('all',[texts[x[0]] for x in boxes_to_up])
+            #     print('all',[box_distance(x[1],box_main,verbose=True) for x in boxes_to_up])
+                
             boxes_x_intersected = [x for x in boxes_to_up if intersectoin_by_axis('x',x[1], box_main)>max(min_share,intersectoin_by_axis('y',x[1], box_main))]
             boxes_y_intersected = [x for x in boxes_to_up if intersectoin_by_axis('y',x[1], box_main)>max(min_share,intersectoin_by_axis('x',x[1], box_main))]
-            boxes_not_xy_intersected = [x for x in boxes_to_up if max(intersectoin_by_axis('x',x[1], box_main),intersectoin_by_axis('y',x[1], box_main))<min_share]
+            #boxes_not_xy_intersected = [x for x in boxes_to_up if max(intersectoin_by_axis('x',x[1], box_main),intersectoin_by_axis('y',x[1], box_main))<min_share]
             
-            # for box in boxes_x_intersected[:2]:
-            #     print(texts[box[0]])
-            # print('---')
-            # for box in boxes_y_intersected[:2]:
-            #     print(texts[box[0]])
-            # print('---')
-            # for box in boxes_to_up[:4]:
-            #     print(texts[box[0]])
-            # print('---')
-
-            #left
-            while True:
-                if not boxes_to_up:
+            #===============================================================================
+            neighbors=[]
+            #get three neighbors
+            if True:
+                while True:
+                    if not boxes_to_up:
+                        break
+                    
+                    box = boxes_to_up[0]
+                    #print(texts[box[0]])
+                    boxes_to_up = boxes_to_up[1:]
+                    boxes_to_up = filter_boxes_up(box, box_main, boxes_to_up, boxes_x_intersected, boxes_y_intersected,texts)
+                    
+                    target_word = find_word(texts[box[0]]) or find_words(texts[box[0]])
+                    if kind.split('_to_')[1]=='notword':    
+                        if target_word:
+                            continue
+                    elif kind.split('_to_')[1]=='word':    
+                        if not target_word:
+                            continue
+                    
+                    neighbors.append(box[0])     
+                    # u.extend([ix,box[0]])
+                    # v.extend([box[0],ix])
                     break
                 
-                box = boxes_to_up[0]
-                boxes_to_up = boxes_to_up[1:]
-                boxes_to_up = filter_boxes_up(box, box_main, boxes_to_up, boxes_x_intersected, boxes_y_intersected,texts)
-                
-                target_word = find_word(texts[box[0]]) or find_words(texts[box[0]])
-                if kind.split('_to_')[1]=='notword':    
-                    if target_word:
-                        continue
-                elif kind.split('_to_')[1]=='word':    
-                    if not target_word:
-                        continue
-                       
-                u.append(ix)
-                v.append(box[0])
-                #undirect graph
-                u.append(box[0])
-                v.append(ix)
-                break
-            
-            #up
-            while True:
-                if not boxes_to_up:
+                #up
+                while True:
+                    if not boxes_to_up:
+                        break
+                    box = boxes_to_up[0]
+                    #print(texts[box[0]])
+                    boxes_to_up = boxes_to_up[1:]
+                    boxes_to_up = filter_boxes_up(box, box_main, boxes_to_up, boxes_x_intersected, boxes_y_intersected,texts)
+                    
+                    target_word = find_word(texts[box[0]]) or find_words(texts[box[0]])
+                    if kind.split('_to_')[1]=='notword':    
+                        if target_word:
+                            continue
+                    elif kind.split('_to_')[1]=='word':    
+                        if not target_word:
+                            continue
+                    
+                    neighbors.append(box[0])     
+                    # u.extend([ix,box[0]])
+                    # v.extend([box[0],ix])
                     break
-                box = boxes_to_up[0]
-                boxes_to_up = boxes_to_up[1:]
-                boxes_to_up = filter_boxes_up(box, box_main, boxes_to_up, boxes_x_intersected, boxes_y_intersected,texts)
                 
-                target_word = find_word(texts[box[0]]) or find_words(texts[box[0]])
-                if kind.split('_to_')[1]=='notword':    
-                    if target_word:
-                        continue
-                elif kind.split('_to_')[1]=='word':    
-                    if not target_word:
-                        continue
                 
-                u.append(ix)
-                v.append(box[0])
-                #undirect graph
-                u.append(box[0])
-                v.append(ix)
-                break
-            
-            
-            #diag
-            while True:
-                if not boxes_to_up:
+                #diag
+                while True:
+                    if not boxes_to_up:
+                        break
+                    box = boxes_to_up[0]
+                    #print(texts[box[0]])
+                    boxes_to_up = boxes_to_up[1:]
+                    
+                    target_word = find_word(texts[box[0]]) or find_words(texts[box[0]])
+                    if kind.split('_to_')[1]=='notword':    
+                        if target_word:
+                            continue
+                    elif kind.split('_to_')[1]=='word':    
+                        if not target_word:
+                            continue
+                    
+                    neighbors.append(box[0])     
+                    # u.extend([ix,box[0]])
+                    # v.extend([box[0],ix])
                     break
-                box = boxes_to_up[0]
-                boxes_to_up = boxes_to_up[1:]
+            
+            #===============================================================================
+            # remove to high
+            # for neighbor in neighbors.copy():
+            #     top_neighbor_heigh = bboxs[neighbor][3]-bboxs[neighbor][1]
+            #     curr_box_height = bboxs[ix][3]-bboxs[ix][1]
+            #     threadhold = max(top_neighbor_heigh,curr_box_height)
+            #     if bboxs[ix][1]-bboxs[neighbor][3]>1.25*threadhold:
+            #         neighbors.remove(neighbor)
                 
-                target_word = find_word(texts[box[0]]) or find_words(texts[box[0]])
-                if kind.split('_to_')[1]=='notword':    
-                    if target_word:
-                        continue
-                elif kind.split('_to_')[1]=='word':    
-                    if not target_word:
-                        continue
+            #detect left_neighbor
+            left_neighbors = [i for i in neighbors if intersectoin_by_axis('x',bboxs[ix], bboxs[i])>=min_share]
+            if left_neighbors:
+                left_neighbor = sorted(left_neighbors,key=lambda i: box_distance(bboxs[i],bboxs[ix]), reverse=False)[0]
+            else:
+                left_neighbor = None
                 
-                u.append(ix)
-                v.append(box[0])
-                #undirect graph
-                u.append(box[0])
-                v.append(ix)
-                break
+            #keeping only left and top
+            #print('neighbors',[texts[x] for x in neighbors])
+            if len(neighbors)>2:
+                top_neighbors = [i for i in neighbors if intersectoin_by_axis('y',bboxs[ix], bboxs[i])>=min_share]
+                
+                if top_neighbors:
+                    top_neighbor = sorted(top_neighbors,key=lambda i: box_distance(bboxs[i],bboxs[ix]), reverse=False)[0]
+                else:
+                    top_neighbor = None
+                
+                if left_neighbor and top_neighbor:
+                    neighbors = [left_neighbor,top_neighbor]
+                elif left_neighbor:
+                    neighbors.remove(left_neighbor)
+                    neighbors = sorted(neighbors,key=lambda i: box_distance(bboxs[i],bboxs[ix]), reverse=False)[0]
+                    neighbors = [neighbors,left_neighbor]
+                elif top_neighbor:
+                    neighbors.remove(top_neighbor)
+                    neighbors = sorted(neighbors,key=lambda i: box_distance(bboxs[i],bboxs[ix]), reverse=False)[0]
+                    neighbors = [neighbors,top_neighbor]
+                else:
+                    neighbors = sorted(neighbors,key=lambda i: box_distance(bboxs[i],bboxs[ix]), reverse=False)
+                    neighbors = neighbors[:2]
+            #===============================================================================
+            
+            #avoid duplicate top neighbor
+            non_left_neighbors = [i for i in neighbors if i!=left_neighbor]
+            for neighbor in non_left_neighbors:
+                sub_neighbors = neighbors_idx(neighbor, u, v)
+                
+                bottom_neighbors = [i for i in sub_neighbors if 
+                                    intersectoin_by_axis('y',bboxs[neighbor], bboxs[i])>=min_share and
+                                    (0.5*(bboxs[i][1]+bboxs[i][3])>=bboxs[neighbor][3]) ]
+                
+                if bottom_neighbors:
+                    bottom_neighbor = sorted(bottom_neighbors,key=lambda i: box_distance(bboxs[neighbor],bboxs[i]), reverse=False)[0]
+                else:
+                    bottom_neighbor = None
+                
+                if bottom_neighbor:
+                    neighbors.remove(neighbor)
+                    
+            # avoid duplicate top neighbor 2
+            non_left_neighbors = list(reversed([i for i in neighbors if i!=left_neighbor]))
+            for neighbor in non_left_neighbors:
+                sub_neighbors = neighbors_idx(neighbor, u, v)
+                if left_neighbor in sub_neighbors:
+                    neighbors.remove(left_neighbor)
+                elif set(sub_neighbors) & set(neighbors):
+                    neighbors.remove(neighbor)
+                    
+            
+                
+            #===============================================================================
+                
+            for n in neighbors:
+                u.extend([ix,n])
+                v.extend([n,ix])
             
         return v, u
     
@@ -695,6 +938,7 @@ class GraphBuilder():
             boxs = word_boxes['boxes']
             boxs = [unnormalize_box(box, size[0], size[1]) for box in boxs]
             texts = word_boxes['words']
+            #=======================================================
 
             features['boxs'].append(boxs)
             features['texts'].append(texts)
@@ -734,8 +978,11 @@ class GraphBuilder():
             u, v = self.half_fully_connected(boxes, words, self.word_to_word)
             
             #Filtering================
-            u,v = remove_diag_edges(boxes,u,v)
-            u,v = remove_notline_edges(boxes,u,v)
+            #u,v = remove_diag_edges2(boxes,u,v,words,0.4)
+            #u,v = remove_vertical_edges(boxes,u,v)
+            
+            #u,v = remove_notline_edges(boxes,u,v)
+            
             
             g = dgl.graph((torch.tensor(u), torch.tensor(v)), num_nodes=len(boxes), idtype=torch.int32)
             graphs.append(g)
@@ -789,7 +1036,7 @@ class GraphBuilder():
             tokens_bbox = []
             tokens_text = []
             nl = []
-            center = lambda rect: ((rect[2]+rect[0])/2, (rect[3]+rect[1])/2)
+            
             for parent in root:
                 if parent.tag.split("}")[1] == 'Page':
                     for child in parent:
@@ -927,8 +1174,6 @@ class GraphBuilder():
                     u, v = g.all_edges()
                     labels = g.edata['label'].tolist()
                     u, v = u.tolist(), v.tolist()
-
-                    center = lambda rect: ((rect[2]+rect[0])/2, (rect[3]+rect[1])/2)
 
                     num_pair = 0
                     num_none = 0
