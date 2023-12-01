@@ -34,35 +34,37 @@ def box_distance(box_left: Tuple[int,int,int,int],
                  box_right: Tuple[int,int,int,int],
                  verbose=False)->float:
     """Distance between centers of two boxes."""
-    y_intersectoin = intersectoin_by_axis('y',box_left, box_right)
-    x_intersectoin = intersectoin_by_axis('x',box_left, box_right)
-    
-    x1_center = (box_left[0] + box_left[2]) / 2
-    x2_center = (box_right[0] + box_right[2]) / 2
-    y1_center = (box_left[1] + box_left[3]) / 2
-    y2_center = (box_right[1] + box_right[3]) / 2
-        
-    x_dist = (box_right[0] - box_left[2]) 
+    x_dist = (box_right[2] - box_left[2]) 
     if x_dist<0:
-        x_dist = (box_right[2] - box_left[2]) 
-        
-    #x_dist = x_dist * (1-y_intersectoin)
-    
-    # if y_intersectoin>0.25:
-    #     x_dist = 0
-    # else:
-    #     x_dist = abs(x2_center - x1_center)
-        
-    y_dist = abs(y2_center - y1_center)*(1-x_intersectoin)
-    # if x_intersectoin>0.25:
-    #     y_dist = 0
-    # else:
-    #     y_dist = abs(y2_center - y1_center)
-        
-    #distance = math.sqrt((x2_center - x1_center)**2 + (y2_center - y1_center)**2)
+        x_dist = 0
+   
+    y_dist = (box_right[3] - box_left[3]) 
+    if y_dist<0:
+        y_dist = 0
     
     if verbose:
         print(x_dist,y_dist)
+        
+    distance = x_dist + 3*y_dist
+    
+    return distance
+
+
+def box_distance_far(box_left: Tuple[int,int,int,int], 
+                 box_right: Tuple[int,int,int,int],
+                 verbose=False)->float:
+    """Distance between centers of two boxes."""
+    x_dist = max(box_right[2] - box_left[0],box_left[2] - box_right[0]) 
+    if x_dist<0:
+        x_dist = 0
+   
+    y_dist = max(box_right[3] - box_left[1],box_left[3] - box_right[1]) 
+    if y_dist<0:
+        y_dist = 0
+    
+    if verbose:
+        print(x_dist,y_dist)
+        
     distance = x_dist + 3*y_dist
     
     return distance
@@ -566,7 +568,7 @@ class GraphBuilder():
             #source_number = find_dates(texts[ix]) or find_amounts(texts[ix]) or find_numbers(texts[ix]) or find_codes(texts[ix])
             source_word = find_word(texts[ix]) or find_words(texts[ix])
             
-            # if ix>5:
+            # if ix>34:
             #    continue
             
             # if '78.40' not in texts[ix]:
@@ -590,8 +592,8 @@ class GraphBuilder():
             boxes_to_left = [x for x in bboxs_with_id if 
                              (
                                 (
-                                   (0.5*(x[1][0]+x[1][2])<=box_main[2]) or #center of boxes left to right edge
-                                   (intersectoin_by_axis('y',x[1], box_main)>min_share) #intesects on y
+                                   (x[1][0]<=box_main[2])# or #(0.5*(x[1][0]+x[1][2])<=box_main[2]) or #center of boxes left to right edge
+                                   #(intersectoin_by_axis('y',x[1], box_main)>min_share) #intesects on y
                                 )
                                 and (x[0]!=ix)
                              )]
@@ -599,13 +601,18 @@ class GraphBuilder():
             boxes_to_up =   [x for x in boxes_to_left if 
                              (
                                 (
-                                    (0.5*(x[1][1]+x[1][3])<=box_main[3]) or #center of boxes left to right edge
+                                    (0.5*(x[1][1]+x[1][3])<=box_main[3]) or #center over bottom
                                     (intersectoin_by_axis('x',x[1], box_main)>min_share) #intesects on x
                                 )
                                 and (x[0]!=ix)
                              )]
+            boxes_to_up =   [x for x in boxes_to_up if not 
+                             ((intersectoin_by_axis('x',x[1], box_main)>min_share) and
+                              (x[1][0]>box_main[0]))]
+            
+            
             boxes_to_up = sorted(boxes_to_up,key=lambda x: box_distance(x[1],box_main), reverse=False)
-            # if 'Summer' in texts[ix]:
+            # if 'Our Voucher Number' in texts[ix]:
             #     print('all',[texts[x[0]] for x in boxes_to_up])
             #     print('all',[box_distance(x[1],box_main,verbose=True) for x in boxes_to_up])
                 
@@ -683,15 +690,7 @@ class GraphBuilder():
                     # v.extend([box[0],ix])
                     break
             
-            #===============================================================================
-            # remove to high
-            # for neighbor in neighbors.copy():
-            #     top_neighbor_heigh = bboxs[neighbor][3]-bboxs[neighbor][1]
-            #     curr_box_height = bboxs[ix][3]-bboxs[ix][1]
-            #     threadhold = max(top_neighbor_heigh,curr_box_height)
-            #     if bboxs[ix][1]-bboxs[neighbor][3]>1.25*threadhold:
-            #         neighbors.remove(neighbor)
-                
+            #===============================================================================    
             #detect left_neighbor
             left_neighbors = [i for i in neighbors if intersectoin_by_axis('x',bboxs[ix], bboxs[i])>=min_share]
             if left_neighbors:
@@ -699,26 +698,40 @@ class GraphBuilder():
             else:
                 left_neighbor = None
                 
-            #keeping only left and top
-            #print('neighbors',[texts[x] for x in neighbors])
-            if len(neighbors)>2:
-                top_neighbors = [i for i in neighbors if intersectoin_by_axis('y',bboxs[ix], bboxs[i])>=min_share]
+            top_neighbors = [i for i in neighbors if intersectoin_by_axis('y',bboxs[ix], bboxs[i])>=min_share]
+            if top_neighbors:
+                top_neighbor = sorted(top_neighbors,key=lambda i: box_distance(bboxs[i],bboxs[ix]), reverse=False)[0]
+            else:
+                top_neighbor = None
                 
+            # remove far neighbors
+            if left_neighbor:
+                if left_neighbor in neighbors[:2]:
+                    max_dist = box_distance_far(bboxs[left_neighbor],bboxs[ix])
+                    neighbors = [i for i in neighbors if box_distance(bboxs[i],bboxs[ix])<=max_dist]
+            elif len(neighbors)>1 and neighbors[0]!=top_neighbor:
+                max_dist = box_distance_far(bboxs[neighbors[0]],bboxs[ix])
+                neighbors = [i for i in neighbors if box_distance(bboxs[i],bboxs[ix])<=max_dist]
+                
+                top_neighbors = [i for i in neighbors if intersectoin_by_axis('y',bboxs[ix], bboxs[i])>=min_share]
                 if top_neighbors:
                     top_neighbor = sorted(top_neighbors,key=lambda i: box_distance(bboxs[i],bboxs[ix]), reverse=False)[0]
                 else:
                     top_neighbor = None
-                
+            #===============================================================================
+            
+            #keeping only left and top
+            if len(neighbors)>2:
                 if left_neighbor and top_neighbor:
                     neighbors = [left_neighbor,top_neighbor]
                 elif left_neighbor:
                     neighbors.remove(left_neighbor)
-                    neighbors = sorted(neighbors,key=lambda i: box_distance(bboxs[i],bboxs[ix]), reverse=False)[0]
-                    neighbors = [neighbors,left_neighbor]
+                    closest_non_left = sorted(neighbors,key=lambda i: box_distance(bboxs[i],bboxs[ix]), reverse=False)[0]
+                    neighbors = [closest_non_left,left_neighbor]
                 elif top_neighbor:
                     neighbors.remove(top_neighbor)
-                    neighbors = sorted(neighbors,key=lambda i: box_distance(bboxs[i],bboxs[ix]), reverse=False)[0]
-                    neighbors = [neighbors,top_neighbor]
+                    closest_non_top = sorted(neighbors,key=lambda i: box_distance(bboxs[i],bboxs[ix]), reverse=False)[0]
+                    neighbors = [closest_non_top,top_neighbor]
                 else:
                     neighbors = sorted(neighbors,key=lambda i: box_distance(bboxs[i],bboxs[ix]), reverse=False)
                     neighbors = neighbors[:2]
@@ -740,20 +753,32 @@ class GraphBuilder():
                 
                 if bottom_neighbor:
                     neighbors.remove(neighbor)
+            #===============================================================================
                     
             # avoid duplicate top neighbor 2
             non_left_neighbors = list(reversed([i for i in neighbors if i!=left_neighbor]))
             for neighbor in non_left_neighbors:
                 sub_neighbors = neighbors_idx(neighbor, u, v)
-                if left_neighbor in sub_neighbors:
+                left_sub_neighbors = [i for i in sub_neighbors if intersectoin_by_axis('x',bboxs[neighbor], bboxs[i])>=min_share]
+                if left_neighbor in left_sub_neighbors:
                     neighbors.remove(left_neighbor)
                 elif set(sub_neighbors) & set(neighbors):
                     neighbors.remove(neighbor)
                     
+            # #===============================================================================
+            # # remove to far
+            non_left_neighbors = list(reversed([i for i in neighbors if i!=left_neighbor]))
+            for neighbor in non_left_neighbors:
+                sub_neighbors = neighbors_idx(neighbor, u, v)
+                if not sub_neighbors:
+                    continue
+                
+                max_dist = max([box_distance_far(bboxs[neighbor],bboxs[i]) for i in sub_neighbors])
+                
+                if box_distance(bboxs[neighbor],bboxs[ix])>max_dist:
+                    neighbors.remove(neighbor)
             
-                
             #===============================================================================
-                
             for n in neighbors:
                 u.extend([ix,n])
                 v.extend([n,ix])
