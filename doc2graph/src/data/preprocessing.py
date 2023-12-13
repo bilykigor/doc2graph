@@ -1,75 +1,18 @@
+import os
+import json
 import torch
 import torchvision
 import numpy as np
+
 from scipy.optimize import linprog
-import os
-from PIL import ImageDraw, Image, ImageFont
-import json
+from PIL import ImageDraw, Image
+
 import pytesseract
 from pytesseract import Output
 
 
-def draw_boxes(image, boxes_all, boxes, labels=None, links = None, scores = None, color='green', width=2):
-    draw = ImageDraw.Draw(image, "RGBA")
-    font = ImageFont.load_default()
-    
-    if links:
-        for idx in range(len(links['src'])):
-            key_center = center(boxes_all[links['src'][idx]])
-            value_center = center(boxes_all[links['dst'][idx]])
-            draw.line((key_center, value_center), fill='violet', width=2)
-            
-    if labels:
-        for box,label in zip(boxes,labels):
-            if color=='green':
-                fill=(0, 255, 0, 127)
-            else:
-                fill=(255, 0, 0, 127)
-            draw.rectangle(box, outline=(color), width=width,fill=fill)
-            text_position = (box[0]+10, box[1]-10)
-            text = str(label)
-            draw.text(text_position, text=text, font=font, fill=(255,0, 0)) 
-        if scores:
-            for box,label, score in zip(boxes,labels, scores):
-                if color=='green':
-                    fill=(0, 255, 0, 127)
-                else:
-                    fill=(255, 0, 0, 127)
-                draw.rectangle(box, outline=(color), width=width,fill=fill)
-                text_position = (box[0]+10, box[1]-10)
-                text = '%s-%6.2f' % (label, score)
-                draw.text(text_position, text=text, font=font, fill=(255,0, 0)) 
-    else:
-        for box in boxes:
-            if color=='green':
-                fill=(0, 255, 0, 127)
-            else:
-                fill=(255, 0, 0, 127)
-            draw.rectangle(box, outline=(color), width=width,fill=fill)
-        
-    return image
-
-def unnormalize_box(bbox, width, height):
-    return [
-        width * (bbox[0] / 1000),
-        height * (bbox[1] / 1000),
-        width * (bbox[2] / 1000),
-        height * (bbox[3] / 1000),
-    ]
-    
-def normalize_box(box, width, height):
-    return [
-        int(1000 * (box[0] / width)),
-        int(1000 * (box[1] / height)),
-        int(1000 * (box[2] / width)),
-        int(1000 * (box[3] / height)),
-    ]
-    
 def scale_back(r, w, h): return [int(r[0]*w),
                                  int(r[1]*h), int(r[2]*w), int(r[3]*h)]
-
-
-def center(r): return ((r[0] + r[2]) / 2, (r[1] + r[3]) / 2)
 
 
 def isIn(c, r):

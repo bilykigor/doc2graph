@@ -21,3 +21,4 @@ src/models/checkpoints
 prova*
 inference
 __pycache__
+data/*

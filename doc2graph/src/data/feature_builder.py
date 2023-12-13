@@ -8,47 +8,15 @@ from math import sqrt
 from tqdm import tqdm
 from PIL import Image, ImageDraw
 import torchvision.transforms.functional as tvF
-from sentence_transformers import SentenceTransformer, util
 from typing import List, Tuple,Union
 import dgl
 
 #from doc2graph.src.paths import CHECKPOINTS
 from doc2graph.src.models.unet import Unet
-from doc2graph.src.data.utils import to_bin, to_bin2, file_to_images
+from doc2graph.src.data.utils import file_to_images
 from doc2graph.src.data.utils import polar, get_histogram, polar2, polar3, intersectoin_by_axis, find_dates, find_amounts, find_numbers, find_codes, find_word, find_words
 from doc2graph.src.utils import get_config
 from doc2graph.src.data.preprocessing import normalize_box
-
-
-def text_to_mask(text):
-    emb=[0,0,0,0,0,0]
-    if find_dates(text):
-        #print(text)
-        emb[0]=1
-    elif find_amounts(text):
-        #print(text)
-        emb[1]=1
-    elif find_numbers(text):
-        #print(text)
-        emb[2]=1
-    elif find_codes(text):
-        #print(text)
-        emb[3]=1
-    elif find_word(text) or find_words(text):
-        #print(text)
-        emb[4]=1
-    #else:
-    #    print(text)
-    #emb.append(len(text))
-    #emb.append(len(text.split()))
-    return emb
-
-# def text_to_embedding(text):
-#     if find_word(text) or find_words(text):
-#         return text_embedder(text).vector
-    
-#     return np.zeros(300, dtype=np.float32)
-
 
 
 class FeatureBuilder():
@@ -87,7 +55,7 @@ class FeatureBuilder():
 
         if self.add_embs:
             #text_embedder = spacy.load('en_core_web_lg')
-            self.text_embedder_core = SentenceTransformer('paraphrase-multilingual-MiniLM-L12-v2')
+            #self.text_embedder_core = SentenceTransformer('paraphrase-multilingual-MiniLM-L12-v2')
             self.text_embedder = self.text_to_embedding
             
         self.mask_embedder = text_to_mask
