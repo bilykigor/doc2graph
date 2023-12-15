@@ -38,13 +38,83 @@ def find_amounts(text):
 
 
 def find_codes(text):
-    text = text.lower().strip()
-    mask = r"#?([a-z]+-?)*\d+[-a-z\d]*"
-    mt = re.match(mask, text)
-    if mt:
-        if mt.span() == (0, len(text)):
+    # text = text.lower().strip()
+    # mask = r"#?([a-z]+-?)*\d+[-a-z\d]*"
+    # mt = re.match(mask, text)
+    # if mt:
+    #     if mt.span() == (0, len(text)):
+    #         return True
+    # return False
+    
+    if has_digits(text):
+        if has_no_digits(text):
+            return True
+    
+    return False
+
+
+def is_digit(input_string):
+    for char in input_string:
+        if char not in '0123456789':
+            return False
+    return True
+
+
+def has_digits(input_string):
+    for char in input_string:
+        if char in '0123456789':
             return True
     return False
+
+
+def has_no_digits(input_string):
+    for char in input_string:
+        if char not in '0123456789':
+            return True
+    return False
+
+
+def is_letters(input_string):
+    for char in input_string:
+        if not char.isalpha():
+            return False
+    return True
+
+
+def has_letters(input_string):
+    for char in input_string:
+        if char.isalpha():
+            return True
+    return False
+
+
+def remove_stop_symbols(text):
+    if has_digits(text):
+        return text
+    
+    #stop_symbols = '()|$&*#!/-'
+    #for s in stop_symbols:
+    #    text = text.replace(s,' ')
+    
+    text = [s if s.isalpha() or s == ' ' else ' ' for s in text]
+    
+    text = ''.join(text).strip()
+    
+    return text
+
+
+def has_only_letters_and_space(text):
+    text = remove_stop_symbols(text)
+    
+    pattern = r'^[A-Za-z\s]+$'
+    return re.match(pattern, text) is not None
+
+
+def has_only_digits_and_space(text):
+    text = remove_stop_symbols(text)
+    
+    pattern = r'^[0-9\s]+$'
+    return re.match(pattern, text) is not None
 
 
 def find_numbers(text):

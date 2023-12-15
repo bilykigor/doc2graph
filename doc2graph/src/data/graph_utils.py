@@ -1,5 +1,6 @@
 import numpy as np
 import networkx as nx
+from networkx.algorithms import isomorphism
 
 from difflib import SequenceMatcher
 
@@ -8,7 +9,7 @@ from doc2graph.src.data.image_utils import intersectoin_by_axis
 center_x = lambda rect: (rect[0]+rect[2])/2
 center_y = lambda rect: (rect[1]+rect[3])/2
 center = lambda rect: ((rect[0] + rect[2]) / 2, (rect[1] + rect[3]) / 2)
-
+area = lambda rect: abs(rect[0] - rect[2]) * abs(rect[1] - rect[3])
 
 def box_distance(box_left, 
                  box_right,
@@ -239,25 +240,36 @@ def create_graph(words, boxes, min_share = 0.4):
         
         # Only one egde from below
         above_neighbors = [i for i in neighbors if boxes[i][3]<center_y(box_main) and i!=left_neighbor]
-        for node in above_neighbors:
-            below_neighbors = [e for e in G.edges(node) if G.edges[e]['direction'] in ['down','down_right']]
-            #below_neighbors = [i for i in G.neighbors(node) if boxes[node][3]<center_y(boxes[i]) and #below
-            #                   intersectoin_by_axis('x',boxes[node], boxes[i])<min_share]            #not left
-            if below_neighbors:
-                neighbors.remove(node)
+        for above_neighbor in above_neighbors:
+            current_distance = box_distance(G.nodes[above_neighbor]['box'], box_main)
+            below_neighbors = [n for n in G.neighbors(above_neighbor) if G.edges[(above_neighbor,n)]['direction'] in ['down','down_right']]
+            for below_neighbor in below_neighbors:
+                existed_distance = box_distance(G.nodes[above_neighbor]['box'], G.nodes[below_neighbor]['box'],)
+                if current_distance < existed_distance:
+                    G.remove_edge(above_neighbor, below_neighbor)
+                    G.remove_edge(below_neighbor, above_neighbor)
+                else:
+                    neighbors.remove(above_neighbor)
+                    break
         #----------------------------------------------------------------------     
-        
         # Only one egde from right
         left_neighbors = [i for i in neighbors if center_x(boxes[i])<=box_main[0]]# and i!=left_neighbor]
         for node in left_neighbors:
-            right_neighbors = [e for e in G.edges(node) if G.edges[e]['direction'] in ['right','down_right']]
-            if right_neighbors:
+            current_distance = box_distance(G.nodes[node]['box'], box_main)
+            right_neighbors = [n for n in G.neighbors(node) if G.edges[(node,n)]['direction'] in ['right','down_right']]
+            for right_neighbor in right_neighbors:
+                #existed_distance = box_distance(G.nodes[node]['box'], G.nodes[right_neighbor]['box'],)
+                # if current_distance < existed_distance:
+                #     G.remove_edge(node, right_neighbor)
+                #     G.remove_edge(right_neighbor, node)
+                # else:
                 neighbors.remove(node)
                 if node==left_neighbor:
                     left_neighbor = None
+                break
                     
-        # if ix>=4:
-        #     print(ix, neighbors, left_neighbors)
+        # if ix>=32:
+        #     print(words[ix],ix, neighbors, left_neighbors)
         #     break
         #----------------------------------------------------------------------    
         
@@ -349,7 +361,7 @@ def Conv(G):
         G.nodes[node]['conv_embedding'] = np.concatenate((G.nodes[node]['embedding'], sum_emb))
  
 
-def calc_text_embedding(G, text_to_embedding, text_to_mask=None):
+def calc_text_embedding(G, text_to_embedding=None, text_to_mask=None):
     for node in G:
         text  = G.nodes[node]['text']
         if text_to_mask is not None:
@@ -360,11 +372,14 @@ def calc_text_embedding(G, text_to_embedding, text_to_mask=None):
                 masked_text = '<A>'
             elif mask[2]:
                 masked_text = '<N>'
+            elif mask[3]:
+                masked_text = '<C>'
             else:
                 masked_text = text
             G.nodes[node]['masked_text'] = masked_text
-            G.nodes[node]['embedding'] = text_to_embedding(masked_text)
-        else:
+            if text_to_embedding is not None:
+                G.nodes[node]['embedding'] = text_to_embedding(masked_text)
+        elif text_to_embedding is not None:
             G.nodes[node]['embedding'] = text_to_embedding(text)
             
 
@@ -581,3 +596,70 @@ def find_target_node_by_text(ix,
     print('GRAPH', source_text,'--->',target_text, d)
     
     return target_node  
+
+
+def get_all_subgraphs(G, min_length = 3):
+    subgraphs = []
+    for sg1_nodes in nx.connected_components(G):
+        if len(sg1_nodes)<min_length:
+            continue
+        sg1 = G.subgraph(sg1_nodes)
+        
+        used=[]
+        for i in sg1_nodes:
+            #if len(list(G.neighbors(i)))!=1:
+            #    continue
+            used.append(i)
+            others = [ix for ix in sg1_nodes if ix not in used]
+            for path in nx.all_simple_paths(sg1, source=i, target=others):
+                if len(path)<min_length:
+                    continue
+                set_path = set(path)
+                if set_path not in subgraphs:
+                    subgraphs.append(set_path)
+    subgraphs = sorted(subgraphs, key=len, reverse=True)
+    return subgraphs
+
+
+def get_all_simple_paths(G, cutoff):
+    used=[]
+    pathes = []
+    for i in G:
+        #if len(list(G.neighbors(i)))!=1:
+        #    continue
+        used.append(i)
+        others = [ix for ix in G if ix != i]
+        for path in nx.all_simple_paths(G, source=i, target=others, cutoff=cutoff-1):
+            if len(path)<cutoff:
+                continue
+            #set_path = set(path)
+            if path not in pathes:
+                pathes.append(path)
+    return pathes
+
+
+def get_all_egos(G, radius=1):
+    res = []
+    for i in G:
+        #if len(list(G.neighbors(i)))!=1:
+        #    continue
+        res.append((i,nx.ego_graph(G,i,radius)))
+        
+    return res
+
+
+def same_graphs(sg1,sg2,label='text'):
+    if sg1.number_of_nodes() != sg2.number_of_nodes():
+        return False
+    
+    if sg1.number_of_edges() != sg2.number_of_edges():
+        return False
+    
+    if {x[1][label] for x in sg1.nodes(data=True)} != {x[1][label] for x in sg2.nodes(data=True)}:
+        #print('text')
+        return False
+        
+    GM = isomorphism.GraphMatcher(sg1, sg2, node_match=lambda n1, n2: n1[label] == n2[label], edge_match=lambda e1, e2: e1['direction'] == e2['direction'])
+    if GM.is_isomorphic():
+        return True
+    return False
