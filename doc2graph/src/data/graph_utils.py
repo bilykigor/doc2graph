@@ -5,7 +5,7 @@ from networkx.algorithms import isomorphism
 
 from difflib import SequenceMatcher
 
-from doc2graph.src.data.image_utils import intersectoin_by_axis
+from doc2graph.src.data.image_utils import intersectoin_by_axis, normalize_box
 
 center_x = lambda rect: (rect[0]+rect[2])/2
 center_y = lambda rect: (rect[1]+rect[3])/2
@@ -690,6 +690,7 @@ def collapse_nodes(G, nodes_to_collapse):
 
 def match_neighbors(gu, hu, source_G, target_H):
     matched = set()
+    
     for gv in source_G.neighbors(gu):
         for hv in target_H.neighbors(hu):
             if source_G.nodes[gv]['text'] == target_H.nodes[hv]['text']:
@@ -699,6 +700,8 @@ def match_neighbors(gu, hu, source_G, target_H):
 
 
 def cbfs_matching(source_G, target_H, i, j):
+    if source_G.nodes[i]['text']!=target_H.nodes[j]['text']:
+        return []
     # Initialize queues for both graphs
     GQ = deque()
     HQ = deque()
@@ -749,4 +752,4 @@ def cbfs_matching_score(M, source_graph_shared, target_graph_shared, source_imag
     score_2 = source_containing_area_matched*target_containing_area_matched
     score_2 /= source_containing_area*target_containing_area
     
-    return score_1*score_2
+    return score_1,score_2
