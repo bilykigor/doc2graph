@@ -1,5 +1,6 @@
 import numpy as np
 import networkx as nx
+from collections import deque
 from networkx.algorithms import isomorphism
 
 from difflib import SequenceMatcher
@@ -643,6 +644,7 @@ def get_all_egos(G, radius=1):
     for i in G:
         #if len(list(G.neighbors(i)))!=1:
         #    continue
+        
         res.append((i,nx.ego_graph(G,i,radius)))
         
     return res
@@ -663,3 +665,88 @@ def same_graphs(sg1,sg2,label='text'):
     if GM.is_isomorphic():
         return True
     return False
+
+
+def collapse_nodes(G, nodes_to_collapse):
+    new_node = nodes_to_collapse[0]
+    edges = list(G.edges())
+    for u,v in edges:
+        if u in nodes_to_collapse and v in nodes_to_collapse:
+            G.remove_edge(u,v)
+        elif u in nodes_to_collapse[1:]:
+            G.add_edge(new_node,v, direction = G.edges[(u,v)]['direction'])
+            G.remove_edge(u,v)
+            
+        elif v in nodes_to_collapse[1:]:
+            G.add_edge(u,new_node, direction = G.edges[(u,v)]['direction'])    
+            G.remove_edge(u,v)   
+    
+    x = [G.nodes[n]['text'] for n in nodes_to_collapse]
+    text = set.union(*x) 
+    G.nodes[nodes_to_collapse[0]]['text'] =  text 
+    for n in nodes_to_collapse[1:]:
+        G.remove_node(n)
+        
+
+def match_neighbors(gu, hu, source_G, target_H):
+    matched = set()
+    for gv in source_G.neighbors(gu):
+        for hv in target_H.neighbors(hu):
+            if source_G.nodes[gv]['text'] == target_H.nodes[hv]['text']:
+                if source_G.edges[(gu,gv)]['direction'] == target_H.edges[(hu,hv)]['direction']:
+                    matched.add((gv, hv))
+    return matched
+
+
+def cbfs_matching(source_G, target_H, i, j):
+    # Initialize queues for both graphs
+    GQ = deque()
+    HQ = deque()
+
+    # Initialize colors for all nodes in both graphs
+    colors_G = {v: 'WHITE' for v in source_G}
+    colors_H = {v: 'WHITE' for v in target_H}
+
+    # Set starting nodes' colors to GRAY
+    colors_G[i] = 'GRAY'
+    colors_H[j] = 'GRAY'
+
+    # Initialize matching set
+    M = [(i, j)]
+
+    # Enqueue starting nodes
+    GQ.append(i)
+    HQ.append(j)
+
+    while GQ and HQ:
+        gu = GQ.popleft()
+        hu = HQ.popleft()
+
+        # Find matching neighbors
+        N = match_neighbors(gu, hu, source_G, target_H)
+
+        for gv, hv in N:
+            if colors_G[gv] == 'WHITE' and colors_H[hv] == 'WHITE':
+                M.append((gv, hv))
+                GQ.append(gv)
+                HQ.append(hv)
+                colors_G[gv] = 'GRAY'
+                colors_H[hv] = 'GRAY'
+
+    return M    
+
+
+def cbfs_matching_score(M, source_graph_shared, target_graph_shared, source_image_size, target_image_size, source_containing_area, target_containing_area):
+    source_graph_matched = source_graph_shared.subgraph([x[0] for x in M])
+    target_graph_matched = target_graph_shared.subgraph([x[1] for x in M])
+    
+    source_containing_area_matched = area(normalize_box(get_containing_box(source_graph_matched), source_image_size[0], source_image_size[1]))
+    target_containing_area_matched = area(normalize_box(get_containing_box(target_graph_matched), target_image_size[0], target_image_size[1]))
+
+    score_1 = len(M)*len(M)
+    score_1 /= len(source_graph_shared)*len(target_graph_shared)
+    
+    score_2 = source_containing_area_matched*target_containing_area_matched
+    score_2 /= source_containing_area*target_containing_area
+    
+    return score_1*score_2
