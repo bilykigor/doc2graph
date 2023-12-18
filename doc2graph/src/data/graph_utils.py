@@ -252,9 +252,13 @@ def create_graph(words, boxes, min_share = 0.4):
                 else:
                     neighbors.remove(above_neighbor)
                     break
+        
+        # if ix>=43:
+        #     print(words[ix],ix, neighbors, left_neighbors, top_neighbor)
+        #     break
         #----------------------------------------------------------------------     
         # Only one egde from right
-        left_neighbors = [i for i in neighbors if center_x(boxes[i])<=box_main[0]]# and i!=left_neighbor]
+        left_neighbors = [i for i in neighbors if center_x(boxes[i])<=box_main[0] and i!=top_neighbor]# and i!=left_neighbor]
         for node in left_neighbors:
             current_distance = box_distance(G.nodes[node]['box'], box_main)
             right_neighbors = [n for n in G.neighbors(node) if G.edges[(node,n)]['direction'] in ['right','down_right']]
@@ -269,9 +273,7 @@ def create_graph(words, boxes, min_share = 0.4):
                     left_neighbor = None
                 break
                     
-        # if ix>=32:
-        #     print(words[ix],ix, neighbors, left_neighbors)
-        #     break
+        
         #----------------------------------------------------------------------    
         
         # Remove cross
@@ -283,6 +285,8 @@ def create_graph(words, boxes, min_share = 0.4):
                 diag_neighbor = above_neighbors[1] #first one is top_neighbor
                 if center_y(boxes[top_neighbor])>=center_y(boxes[diag_neighbor]):
                     neighbors.remove(diag_neighbor) #diag cant by above top
+                    
+        
         #----------------------------------------------------------------------     
           
         # Remove if neighbors are linked, except left and top
@@ -293,6 +297,8 @@ def create_graph(words, boxes, min_share = 0.4):
                     for n in intersection:
                         if n not in [left_neighbor,top_neighbor]:
                             neighbors.remove(n)
+                            
+        
         #----------------------------------------------------------------------      
         
         # Double check remove cross            
@@ -385,6 +391,9 @@ def calc_text_embedding(G, text_to_embedding=None, text_to_mask=None):
             
 
 def get_containing_box(G):
+    if not len(G):
+        return None
+    
     boxes = [G.nodes[node]['box'] for node in G.nodes()]
     max_x = max([x[2] for x in boxes])
     max_y = max([x[3] for x in boxes])
@@ -702,6 +711,9 @@ def match_neighbors(gu, hu, source_G, target_H):
 def cbfs_matching(source_G, target_H, i, j):
     if source_G.nodes[i]['text']!=target_H.nodes[j]['text']:
         return []
+    
+    #if source_G.nodes[i]['text'] in ('<D>','<A>','<N>','<C>'):
+    #    return []
     # Initialize queues for both graphs
     GQ = deque()
     HQ = deque()
@@ -736,10 +748,22 @@ def cbfs_matching(source_G, target_H, i, j):
                 colors_G[gv] = 'GRAY'
                 colors_H[hv] = 'GRAY'
 
+    not_mask_exist = False
+    for g,h in M:
+        if source_G.nodes[g]['text'] not in ('<D>','<A>','<N>','<C>'):
+            not_mask_exist = True
+            break
+    
+    if not not_mask_exist:
+        M=[]
+    
     return M    
 
 
 def cbfs_matching_score(M, source_graph_shared, target_graph_shared, source_image_size, target_image_size, source_containing_area, target_containing_area):
+    if not M:
+        return 0,0
+    
     source_graph_matched = source_graph_shared.subgraph([x[0] for x in M])
     target_graph_matched = target_graph_shared.subgraph([x[1] for x in M])
     
@@ -753,3 +777,41 @@ def cbfs_matching_score(M, source_graph_shared, target_graph_shared, source_imag
     score_2 /= source_containing_area*target_containing_area
     
     return score_1,score_2
+
+
+def get_max_graph(source_graph_shared, target_graph_shared, source_image_size, target_image_size, source_containing_area, target_containing_area):
+    max_M = None
+    max_score=0
+    for i in source_graph_shared:
+        for j in target_graph_shared:
+            M = cbfs_matching(source_graph_shared, target_graph_shared, i, j)
+            if len(M)>2:
+                s1,s2 = cbfs_matching_score(M, source_graph_shared, target_graph_shared, source_image_size, target_image_size, source_containing_area, target_containing_area)
+                s= s1*s2
+                if max_M is None:
+                    max_M = M
+                    max_score = s
+                    (I,J) = (i,j)
+                    (S1,S2) = (s1,s2)
+                elif s>max_score:
+                    max_M = M
+                    max_score = s
+                    (I,J) = (i,j)
+                    (S1,S2) = (s1,s2)
+    
+    if max_M:
+        source_nodes_M = [x[0] for x in max_M]
+        target_nodes_M = [x[1] for x in max_M]
+        
+        source_nodes_remaining = [x for x in source_graph_shared if x not in source_nodes_M]
+        target_nodes_remaining = [x for x in target_graph_shared if x not in target_nodes_M]
+        
+        if source_nodes_remaining:
+            if target_nodes_remaining:
+                M_sub = get_max_graph(source_graph_shared.subgraph(source_nodes_remaining), \
+                                      target_graph_shared.subgraph(target_nodes_remaining), \
+                                      source_image_size, target_image_size, source_containing_area, target_containing_area)
+                if M_sub:
+                    max_M.extend(M_sub)
+                    
+    return max_M
