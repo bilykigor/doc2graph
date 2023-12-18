@@ -331,7 +331,7 @@ def create_graph(words, boxes, min_share = 0.4):
             h = box_main[3]-box_main[1]
             h_n = boxes[n][3] - boxes[n][1]
             mean_h = 0.5*(h+h_n)
-            distance = box_distance(boxes[n], box_main)
+            distance = box_distance(boxes[n], box_main)/mean_h
             
             # if 'Check' in words[ix]:
             #     print(ix,n, direction1)
@@ -711,11 +711,12 @@ def match_neighbors(gu, hu, source_G, target_H):
                 if source_G.edges[(gu,gv)]['direction'] == target_H.edges[(hu,hv)]['direction']:
                     d1 = source_G.edges[(gu,gv)]['distance']
                     d2 = target_H.edges[(hu,hv)]['distance']
-                    if d1<100 and d2<100:
+                    if d1<5 and d2<5:
                         matched.add((gv, hv))
                     else:
                         if abs(d1/d2-1)<0.2:
                             matched.add((gv, hv))
+                    #print(gu, source_G.nodes[gu]['text'],source_G.nodes[gv]['text'],d1,d2)
     return matched
 
 
@@ -762,8 +763,9 @@ def cbfs_matching(source_G, target_H, i, j):
     not_mask_exist = False
     for g,h in M:
         if source_G.nodes[g]['text'] not in ('<NW>','<D>','<A>','<N>','<C>'):
-            not_mask_exist = True
-            break
+            if len(source_G.nodes[g]['text'])>4:
+                not_mask_exist = True
+                break
     
     if not not_mask_exist:
         M=[]
@@ -790,10 +792,13 @@ def cbfs_matching_score(M, source_graph_shared, target_graph_shared, source_imag
     return score_1,score_2
 
 
-def get_max_graph(source_graph_shared, target_graph_shared, source_image_size, target_image_size, source_containing_area, target_containing_area):
+def get_max_graph(source_graph_shared, target_graph_shared, source_image_size, target_image_size, source_containing_area, target_containing_area, source_node=None):
     max_M = None
     max_score=0
-    for i in source_graph_shared:
+    source_nodes = source_graph_shared.nodes()
+    if source_node:
+        source_nodes = [source_node]
+    for i in source_nodes:
         for j in target_graph_shared:
             M = cbfs_matching(source_graph_shared, target_graph_shared, i, j)
             if len(M)>2:
@@ -810,19 +815,20 @@ def get_max_graph(source_graph_shared, target_graph_shared, source_image_size, t
                     (I,J) = (i,j)
                     (S1,S2) = (s1,s2)
     
-    if max_M:
-        source_nodes_M = [x[0] for x in max_M]
-        target_nodes_M = [x[1] for x in max_M]
-        
-        source_nodes_remaining = [x for x in source_graph_shared if x not in source_nodes_M]
-        target_nodes_remaining = [x for x in target_graph_shared if x not in target_nodes_M]
-        
-        if source_nodes_remaining:
-            if target_nodes_remaining:
-                M_sub = get_max_graph(source_graph_shared.subgraph(source_nodes_remaining), \
-                                      target_graph_shared.subgraph(target_nodes_remaining), \
-                                      source_image_size, target_image_size, source_containing_area, target_containing_area)
-                if M_sub:
-                    max_M.extend(M_sub)
+    if not source_node:
+        if max_M:
+            source_nodes_M = [x[0] for x in max_M]
+            target_nodes_M = [x[1] for x in max_M]
+            
+            source_nodes_remaining = [x for x in source_graph_shared if x not in source_nodes_M]
+            target_nodes_remaining = [x for x in target_graph_shared if x not in target_nodes_M]
+            
+            if source_nodes_remaining:
+                if target_nodes_remaining:
+                    M_sub = get_max_graph(source_graph_shared.subgraph(source_nodes_remaining), \
+                                        target_graph_shared.subgraph(target_nodes_remaining), \
+                                        source_image_size, target_image_size, source_containing_area, target_containing_area)
+                    if M_sub:
+                        max_M.extend(M_sub)
                     
     return max_M
