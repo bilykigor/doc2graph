@@ -328,11 +328,16 @@ def create_graph(words, boxes, min_share = 0.4):
                 direction1 = 'up_left'
                 direction2 = 'down_right'
             
+            h = box_main[3]-box_main[1]
+            h_n = boxes[n][3] - boxes[n][1]
+            mean_h = 0.5*(h+h_n)
+            distance = box_distance(boxes[n], box_main)
+            
             # if 'Check' in words[ix]:
             #     print(ix,n, direction1)
             #     print(n,ix, direction2)
-            G.add_edge(ix,n, direction=direction1)
-            G.add_edge(n,ix, direction=direction2)
+            G.add_edge(ix,n, direction=direction1, distance = distance)
+            G.add_edge(n,ix, direction=direction2, distance = distance)
             
     return G
 
@@ -704,7 +709,13 @@ def match_neighbors(gu, hu, source_G, target_H):
         for hv in target_H.neighbors(hu):
             if source_G.nodes[gv]['text'] == target_H.nodes[hv]['text']:
                 if source_G.edges[(gu,gv)]['direction'] == target_H.edges[(hu,hv)]['direction']:
-                    matched.add((gv, hv))
+                    d1 = source_G.edges[(gu,gv)]['distance']
+                    d2 = target_H.edges[(hu,hv)]['distance']
+                    if d1<100 and d2<100:
+                        matched.add((gv, hv))
+                    else:
+                        if abs(d1/d2-1)<0.2:
+                            matched.add((gv, hv))
     return matched
 
 
