@@ -374,13 +374,13 @@ def calc_text_embedding(G, text_to_embedding=None, text_to_mask=None):
         if text_to_mask is not None:
             mask = text_to_mask(text)
             if mask[0]:
-                masked_text = '<D>'
+                masked_text = '<NW>'#'<D>'
             elif mask[1]:
-                masked_text = '<A>'
+                masked_text = '<NW>'#'<A>'
             elif mask[2]:
-                masked_text = '<N>'
+                masked_text = '<NW>'#'<N>'
             elif mask[3]:
-                masked_text = '<C>'
+                masked_text = '<NW>' #'<C>'
             else:
                 masked_text = text
             G.nodes[node]['masked_text'] = masked_text
@@ -750,7 +750,7 @@ def cbfs_matching(source_G, target_H, i, j):
 
     not_mask_exist = False
     for g,h in M:
-        if source_G.nodes[g]['text'] not in ('<D>','<A>','<N>','<C>'):
+        if source_G.nodes[g]['text'] not in ('<NW>','<D>','<A>','<N>','<C>'):
             not_mask_exist = True
             break
     
@@ -770,11 +770,11 @@ def cbfs_matching_score(M, source_graph_shared, target_graph_shared, source_imag
     source_containing_area_matched = area(normalize_box(get_containing_box(source_graph_matched), source_image_size[0], source_image_size[1]))
     target_containing_area_matched = area(normalize_box(get_containing_box(target_graph_matched), target_image_size[0], target_image_size[1]))
 
-    score_1 = len(M)*len(M)
-    score_1 /= len(source_graph_shared)*len(target_graph_shared)
+    score_1 = len(M)+len(M)
+    score_1 /= len(source_graph_shared)+len(target_graph_shared)
     
-    score_2 = source_containing_area_matched*target_containing_area_matched
-    score_2 /= source_containing_area*target_containing_area
+    score_2 = source_containing_area_matched+target_containing_area_matched
+    score_2 /= source_containing_area+target_containing_area
     
     return score_1,score_2
 
