@@ -711,12 +711,14 @@ def match_neighbors(gu, hu, source_G, target_H):
                 if source_G.edges[(gu,gv)]['direction'] == target_H.edges[(hu,hv)]['direction']:
                     d1 = source_G.edges[(gu,gv)]['distance']
                     d2 = target_H.edges[(hu,hv)]['distance']
-                    if d1<5 and d2<5:
-                        matched.add((gv, hv))
-                    else:
-                        if abs(d1/d2-1)<0.2:
-                            matched.add((gv, hv))
-                    #print(gu, source_G.nodes[gu]['text'],source_G.nodes[gv]['text'],d1,d2)
+                    matched.add((gv, hv))
+                    # if d1<5 and d2<5:
+                    #     matched.add((gv, hv))
+                    # else:
+                    #     #if abs(d1/d2-1)<0.1 and abs(d1-d2)<4:
+                    #     matched.add((gv, hv))
+                    #     #if gv==45:
+                    #     #print(gu, source_G.nodes[gu]['text'],source_G.nodes[gv]['text'],d1,d2)
     return matched
 
 
@@ -763,9 +765,9 @@ def cbfs_matching(source_G, target_H, i, j):
     not_mask_exist = False
     for g,h in M:
         if source_G.nodes[g]['text'] not in ('<NW>','<D>','<A>','<N>','<C>'):
-            if len(source_G.nodes[g]['text'])>4:
-                not_mask_exist = True
-                break
+            #if len(source_G.nodes[g]['text'])>4:
+            not_mask_exist = True
+            break
     
     if not not_mask_exist:
         M=[]
@@ -786,13 +788,14 @@ def cbfs_matching_score(M, source_graph_shared, target_graph_shared, source_imag
     score_1 = len(M)+len(M)
     score_1 /= len(source_graph_shared)+len(target_graph_shared)
     
+    #print(source_containing_area_matched, target_containing_area_matched)
     score_2 = source_containing_area_matched+target_containing_area_matched
     score_2 /= source_containing_area+target_containing_area
     
     return score_1,score_2
 
 
-def get_max_graph(source_graph_shared, target_graph_shared, source_image_size, target_image_size, source_containing_area, target_containing_area, source_node=None):
+def get_max_graph(source_graph_shared, target_graph_shared, source_image_size, target_image_size, source_containing_area=1, target_containing_area=1, source_node=None):
     max_M = None
     max_score=0
     source_nodes = source_graph_shared.nodes()
@@ -801,7 +804,7 @@ def get_max_graph(source_graph_shared, target_graph_shared, source_image_size, t
     for i in source_nodes:
         for j in target_graph_shared:
             M = cbfs_matching(source_graph_shared, target_graph_shared, i, j)
-            if len(M)>2:
+            if len(M)>=2:
                 s1,s2 = cbfs_matching_score(M, source_graph_shared, target_graph_shared, source_image_size, target_image_size, source_containing_area, target_containing_area)
                 s= s1*s2
                 if max_M is None:

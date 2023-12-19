@@ -38,7 +38,7 @@ required_packages = [
 
 setup(
     name="doc2graph",
-    version="3.2.6",#version_from_git(),
+    version="3.2.7",#version_from_git(),
     description="Repo to transform Documents to Graphs, performing several tasks on them.",
     long_description_content_type="text/markdown",
     long_description=read('README.md'),
