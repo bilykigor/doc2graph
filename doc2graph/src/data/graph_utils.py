@@ -835,3 +835,25 @@ def get_max_graph(source_graph_shared, target_graph_shared, source_image_size, t
                         max_M.extend(M_sub)
                     
     return max_M
+
+
+def frames_dist(a,b):
+    if len(a)==1:
+        if len(b)==1:
+            if source_graph_shared.nodes[a[0]]['text']==target_graph_shared.nodes[b[0]]['text']:
+                return 1
+    
+    sg1 = source_graph_shared.subgraph(a)
+    sg2 = target_graph_shared.subgraph(b)
+    
+    M = get_max_graph(sg1, 
+                    sg2, 
+                    source_image_size, 
+                    target_image_size, 
+                    source_node=None)
+    
+    if M:
+        s1, s2 = cbfs_matching_score(M, source_graph_shared, target_graph_shared, source_image_size, target_image_size, 1, 1)
+        return s1*s2
+    
+    return 0
