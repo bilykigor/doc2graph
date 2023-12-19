@@ -837,7 +837,7 @@ def get_max_graph(source_graph_shared, target_graph_shared, source_image_size, t
     return max_M
 
 
-def frames_dist(a,b):
+def frames_dist(a,b, source_graph_shared,target_graph_shared, source_image_size, target_image_size):
     if len(a)==1:
         if len(b)==1:
             if source_graph_shared.nodes[a[0]]['text']==target_graph_shared.nodes[b[0]]['text']:
