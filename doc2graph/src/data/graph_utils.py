@@ -452,22 +452,33 @@ def split_graph_by_path_vert(G, axis = 1, multiplier = 1.5):
         zones = [list(nodes) for nodes in nx.connected_components(G.to_undirected())]
         
         splitted = False
+        edges_to_remove = []
         for zone in zones:
+            # Try split only zones larger then 3 items
+            if len(zone)<3:
+                continue
+            
             path = get_shortest_path(G.subgraph(zone),zone[0])
             
             if axis==1:
                 edges_vert = [x for x in path if (x[2]['direction'] not in ['left','right'])]
             else:
                 edges_vert = [x for x in path if (x[2]['direction'] in ['left','right'])]
-            distances_vert = [x[2]['distance'] for x in edges_vert]
-            # print(distances_vert)
-            # if distances_vert:
-            #     print(max(distances_vert))
+            edges_vert.sort(key = lambda x: x[2]['distance'])
             
             path = []
-            if multiplier>0 and distances_vert:
-                bound_vert = upper_outlier_bound(distances_vert,multiplier)
-                edges_vert = [x for x in edges_vert if x[2]['distance'] < bound_vert]
+            while True:
+                distances_vert = [x[2]['distance'] for x in edges_vert]
+                
+                if multiplier>0 and distances_vert:
+                    bound_vert = upper_outlier_bound(distances_vert,multiplier)
+                    if max(distances_vert)>bound_vert: #remove largest one
+                        edges_vert = edges_vert[:-1]
+                        #edges_vert = [x for x in edges_vert if x[2]['distance'] < bound_vert]
+                    else:
+                        break
+                else:
+                    break
             
             path.extend(edges_vert)
             
@@ -475,13 +486,15 @@ def split_graph_by_path_vert(G, axis = 1, multiplier = 1.5):
                 edges_horizontal = [x for x in G.subgraph(zone).edges(data = True) if x[2]['direction'] in ['left','right']]
             else:
                 edges_horizontal = [x for x in G.subgraph(zone).edges(data = True) if x[2]['direction'] not in ['left','right']]
-                
+            
             path.extend(edges_horizontal)
+            path.sort(key = lambda x: x[2]['distance'])
             
             path_G = nx.from_edgelist(path)
-            sub_zones = [nodes for nodes in nx.connected_components(path_G)]
-
-            if len(sub_zones)>1:
+            sub_zones = [list(nodes) for nodes in nx.connected_components(path_G)]
+            flatten_sub_zones = [x for l in sub_zones for x in l ]
+            
+            if (len(sub_zones)>1) or (len(flatten_sub_zones)!=len(zone)):
                 splitted = True
                 splitted_any = True
                 
@@ -489,7 +502,7 @@ def split_graph_by_path_vert(G, axis = 1, multiplier = 1.5):
                 for e in edges:
                     if find_zone(e[0], sub_zones)!=find_zone(e[1], sub_zones):
                         G.remove_edge(e[0],e[1])
-
+        
         if not splitted:
             break
     
