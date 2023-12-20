@@ -9,6 +9,8 @@ from doc2graph.src.data.image_utils import points_distance, get_intersection, in
 
 center_x = lambda rect: (rect[0]+rect[2])/2
 center_y = lambda rect: (rect[1]+rect[3])/2
+box_h = lambda rect: max(rect[1],rect[3])-min(rect[1],rect[3])
+box_w = lambda rect: max(rect[0],rect[2])-min(rect[0],rect[2])
 center = lambda rect: ((rect[0] + rect[2]) / 2, (rect[1] + rect[3]) / 2)
 area = lambda rect: abs(rect[0] - rect[2]) * abs(rect[1] - rect[3])
 
@@ -53,7 +55,7 @@ def box_distance_for_split(box_left,
     if verbose:
         print(x_dist, y_dist)
         
-    distance = x_dist + y_dist
+    distance = np.sqrt(x_dist*x_dist + y_dist*y_dist)
     
     return distance
 
@@ -116,7 +118,42 @@ def get_lines(G, min_share=0.8):
             
         used.extend(line)    
         
-    return lines    
+    return lines   
+
+
+def strict_frame(G):
+    lines = get_lines(G)
+    
+    if len(lines)<2:
+        return False
+    
+    flatten_lines = [n for line in lines for n in line]
+    if len(flatten_lines)!=len(G):
+        return False
+    
+    boxes = [get_containing_box(G.subgraph(line)) for line in lines]
+    boxes.sort(key = lambda x: center_y(x))
+    
+    h = list(map(box_h,boxes))
+    if np.std(h)/np.mean(h)>0.25:
+        return False
+    
+    d = np.diff(list(map(center_y,boxes)))
+    if np.std(d)/np.mean(d)>0.25:
+        return False
+    
+    if max(d)>np.mean(h)+np.std(h):
+        return False
+
+    left = list(map(lambda x: x[0],boxes))
+    if np.std(left)>np.mean(h):
+        return False
+    
+    right = list(map(lambda x: x[2],boxes))
+    if np.std(right)>np.mean(h):
+        return False
+    
+    return True
 
 
 #**********************************************************************
@@ -295,21 +332,17 @@ def create_graph(words, boxes, min_share = 0.4):
         #----------------------------------------------------------------------     
         # Only one egde from right
         left_neighbors = [i for i in neighbors if center_x(boxes[i])<=box_main[0] and i!=top_neighbor]# and i!=left_neighbor]
-        for node in left_neighbors:
+        for node in left_neighbors.copy():
             current_distance = box_distance(G.nodes[node]['box'], box_main)
             right_neighbors = [n for n in G.neighbors(node) if G.edges[(node,n)]['direction'] in ['right','down_right']]
             for right_neighbor in right_neighbors:
-                #existed_distance = box_distance(G.nodes[node]['box'], G.nodes[right_neighbor]['box'],)
-                # if current_distance < existed_distance:
-                #     G.remove_edge(node, right_neighbor)
-                #     G.remove_edge(right_neighbor, node)
-                # else:
                 neighbors.remove(node)
+                left_neighbors.remove(node)
                 if node==left_neighbor:
                     left_neighbor = None
                 break
                     
-        
+                    
         #----------------------------------------------------------------------    
         
         # Remove cross
@@ -333,9 +366,21 @@ def create_graph(words, boxes, min_share = 0.4):
                     for n in intersection:
                         if n not in [left_neighbor,top_neighbor]:
                             neighbors.remove(n)
+        
+        
+        #----------------------------------------------------------------------     
+          
+        # Diag neighbors can be only above left neighbor
+        if left_neighbor:
+            if len(left_neighbors)>1:
+                for node in left_neighbors.copy():
+                    if node!=left_neighbor:
+                        if center_y(boxes[node])>center_y(boxes[left_neighbor]):
+                            neighbors.remove(node)
+                            left_neighbors.remove(node)
                             
-        # if ix>=18:
-        #     print(words[ix],ix, neighbors, left_neighbors, top_neighbor)
+        # if ix>=48:
+        #     print(words[ix],ix, neighbors, left_neighbors,left_neighbor, top_neighbor)
         #     print([words[i] for i in neighbors])
         #     break
         #----------------------------------------------------------------------      
@@ -458,8 +503,13 @@ def split_graph_by_path_vert(G, axis = 1, multiplier = 1.5):
         splitted = False
         edges_to_remove = []
         for zone in zones:
-            # Try split only zones larger then 3 items
-            if len(zone)<3:
+            # Try split only zones larger then 4 items
+            if len(zone)<4:
+                continue
+            
+            is_strict = strict_frame(G.subgraph(zone))
+            
+            if is_strict:
                 continue
             
             path = get_shortest_path(G.subgraph(zone),zone[0])
@@ -470,12 +520,13 @@ def split_graph_by_path_vert(G, axis = 1, multiplier = 1.5):
                 edges_vert = [x for x in path if (x[2]['direction'] in ['left','right'])]
             edges_vert.sort(key = lambda x: x[2]['distance'])
             
-            path = []
             while True:
                 distances_vert = [x[2]['distance'] for x in edges_vert]
+                #distances_vert = [x[2]['distance'] for x in path]
                 
                 if multiplier>0 and distances_vert:
                     bound_vert = upper_outlier_bound(distances_vert,multiplier)
+                    #print(bound_vert)
                     if max(distances_vert)>bound_vert: #remove largest one
                         edges_vert = edges_vert[:-1]
                         #edges_vert = [x for x in edges_vert if x[2]['distance'] < bound_vert]
@@ -483,7 +534,10 @@ def split_graph_by_path_vert(G, axis = 1, multiplier = 1.5):
                         break
                 else:
                     break
+                
+                break
             
+            path = []
             path.extend(edges_vert)
             
             if axis==1:
@@ -1023,11 +1077,13 @@ def get_shortest_path(G,i):
 def upper_outlier_bound(data, mult = 2.5):
     Q1 = np.percentile(data, 25)
     Q3 = np.percentile(data, 75)
-
+    M = np.percentile(data, 50)
+    s = np.std(data)
     IQR = Q3 - Q1
 
     #lower_bound = Q1 - 1.5 * IQR
-    upper_bound = Q3 +  mult * IQR
+    #upper_bound = Q3 +  mult * IQR
+    upper_bound = M + mult*s
 
     #data = [x for x in data if (x < upper_bound)]
 
