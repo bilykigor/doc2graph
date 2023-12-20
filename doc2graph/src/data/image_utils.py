@@ -202,3 +202,22 @@ def draw_graph(img, G, c = 'blue', nodes = None):
         draw.ellipse((tuple(x-4 for x in key_center) + tuple(x+4 for x in key_center)), fill = 'red')
         draw.ellipse((tuple(x-4 for x in value_center) + tuple(x+4 for x in value_center)), fill = 'red')
         draw.line((key_center, value_center), fill='red', width=3)
+
+
+def get_intersection(box1,box2):
+    "returns intersection of two rectangles"
+    if box1[3]<=box2[1]:
+        return None
+    
+    if box2[3]<=box1[1]:
+        return None
+    
+    if box1[2]<=box2[0]:
+        return None
+    
+    if box2[2]<=box1[0]:
+        return None
+    
+    result = [max(box1[0],box2[0]),max(box1[1],box2[1]),min(box1[2],box2[2]),min(box1[3],box2[3])]
+    
+    return result

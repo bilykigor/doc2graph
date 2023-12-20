@@ -5,7 +5,7 @@ from networkx.algorithms import isomorphism
 
 from difflib import SequenceMatcher
 
-from doc2graph.src.data.image_utils import intersectoin_by_axis, normalize_box
+from doc2graph.src.data.image_utils import get_intersection, intersectoin_by_axis, normalize_box
 
 center_x = lambda rect: (rect[0]+rect[2])/2
 center_y = lambda rect: (rect[1]+rect[3])/2
@@ -92,7 +92,19 @@ def get_lines(G, min_share=0.8):
         
     return lines    
 
+
 #**********************************************************************
+def get_boxes_inside(boxes, bounding_box):
+    return [b for b in boxes if get_intersection(b,bounding_box) is not None]
+    
+
+def get_graph_inside(G, bounding_box):
+    nodes = [n for n in G if get_intersection(G.nodes[n]['box'],bounding_box) is not None]
+    if not nodes:
+        return None
+    return G.subgraph(nodes)
+  
+    
 def get_boxes_to_left_up(ix, boxes, min_share = 0.4):
     bboxs_with_id = [(ix, box) for ix, box in enumerate(boxes)]
     
@@ -197,7 +209,7 @@ def create_graph(words, boxes, min_share = 0.4):
             #embedding = text_to_embedding(masked_text)
             )
 
-    horizontal_lines = []
+    horizontal_edges = []
     for ix, box_main in enumerate(boxes):
         #source_word = find_word(words[ix]) or find_words(words[ix])
         
@@ -253,9 +265,7 @@ def create_graph(words, boxes, min_share = 0.4):
                     neighbors.remove(above_neighbor)
                     break
         
-        # if ix>=43:
-        #     print(words[ix],ix, neighbors, left_neighbors, top_neighbor)
-        #     break
+        
         #----------------------------------------------------------------------     
         # Only one egde from right
         left_neighbors = [i for i in neighbors if center_x(boxes[i])<=box_main[0] and i!=top_neighbor]# and i!=left_neighbor]
@@ -298,25 +308,35 @@ def create_graph(words, boxes, min_share = 0.4):
                         if n not in [left_neighbor,top_neighbor]:
                             neighbors.remove(n)
                             
-        
+        # if ix>=14:
+        #     print(words[ix],ix, neighbors, left_neighbors, top_neighbor)
+        #     print([words[i] for i in neighbors])
+        #     break
         #----------------------------------------------------------------------      
         
         # Double check remove cross            
         for n in neighbors:
             skip = False
             
+            current_edge = (center_x(boxes[n]),center_y(boxes[n]), center_x(box_main),center_y(box_main))
             if n==left_neighbor:
-                horizontal_lines.append((min(center_y(boxes[ix]), center_y(boxes[n])), center_x(boxes[n]), center_x(boxes[ix])))
+                #y = np.mean([center_y(box_main), center_y(boxes[n])])
+                #horizontal_lines.append((y, center_x(boxes[n]), center_x(box_main)))
+                horizontal_edges.append(current_edge)
             else:
-                for line in horizontal_lines:
-                    if center_y(boxes[ix])>line[0]:
-                        if center_y(boxes[n])<line[0]:
-                            if center_x(boxes[ix])>line[1]:
-                                if center_x(boxes[ix])<line[2]:
-                                    skip = True
-                                    break
+                for edge in horizontal_edges:
+                    intersection_point = line_intersection(edge, current_edge)
+                    if intersection_point:
+                        x,y = intersection_point
+                        if get_intersection(edge,(x,y,x,y)):
+                            if get_intersection(current_edge,(x,y,x,y)):
+                                skip = True
+                                break
             if skip:    
                 continue    
+            
+            # if ix==14:
+            #     print(words[n])
             
             if n==top_neighbor:
                 direction1 = 'up'
@@ -333,13 +353,29 @@ def create_graph(words, boxes, min_share = 0.4):
             mean_h = 0.5*(h+h_n)
             distance = box_distance(boxes[n], box_main)/mean_h
             
-            # if 'Check' in words[ix]:
-            #     print(ix,n, direction1)
-            #     print(n,ix, direction2)
             G.add_edge(ix,n, direction=direction1, distance = distance)
             G.add_edge(n,ix, direction=direction2, distance = distance)
             
     return G
+
+
+def line_intersection(line1, line2):
+    x1, y1, x2, y2 = line1
+    x3, y3, x4, y4 = line2
+
+    # Calculate the determinants
+    det_line1 = (x1 - x2) * (y3 - y4) - (y1 - y2) * (x3 - x4)
+    det_line2 = (x1 * y2 - y1 * x2) * (x3 - x4) - (x1 - x2) * (x3 * y4 - y3 * x4)
+
+    if det_line1 == 0:
+        # Lines are parallel or coincident
+        return None
+
+    # Calculate the x and y coordinates
+    x = det_line2 / det_line1
+    y = ((x1 * y2 - y1 * x2) * (y3 - y4) - (y1 - y2) * (x3 * y4 - y3 * x4)) / det_line1
+
+    return (x, y)
 
 
 def split_graph(G):
@@ -350,6 +386,48 @@ def split_graph(G):
     new_graphs, frames = get_frames([G],[get_containing_box(G)])
     
     zones = [graph.nodes() for graph in new_graphs]
+    
+    edges = list(G.edges())
+    for e in edges:
+        if find_zone(e[0], zones)!=find_zone(e[1], zones):
+            G.remove_edge(e[0],e[1])
+            
+            
+def split_graph_by_path(G):
+    path = get_shortest_path(G,0)
+    path_G = nx.from_edgelist(path)
+    while True:
+        zones = [nodes for nodes in nx.connected_components(path_G)]
+        
+        path = []
+        splitted = False
+        for zone in zones:
+            zone_edges = path_G.subgraph(zone).edges(data=True)
+            distances = [x[2]['distance'] for x in zone_edges]
+            
+            bound_horizontal = upper_outlier_bound(distances,3.5)
+            bound_all = upper_outlier_bound(distances,1.5)
+            
+            edges_horizontal = [x for x in zone_edges 
+                     if x[2]['direction'] in ['left','right'] and
+                        x[2]['distance'] < bound_horizontal]
+            
+            edges_other = [x for x in zone_edges
+                     if x[2]['direction'] not in ['left','right'] and
+                        x[2]['distance'] < bound_all]
+                
+            path.extend(edges_horizontal)
+            path.extend(edges_other)
+                
+            if len(zone_edges)>len(edges_horizontal) + len(edges_other):
+                splitted = True
+            
+        path_G = nx.from_edgelist(path)
+        
+        if not splitted:
+            break
+    
+    zones = [nodes for nodes in nx.connected_components(path_G)]
     
     edges = list(G.edges())
     for e in edges:
@@ -836,6 +914,36 @@ def get_max_graph(source_graph_shared, target_graph_shared, source_image_size, t
                     
     return max_M
 
+
+def get_shortest_path(G,i):
+    used_nodes=[i]
+    edges = list(G.edges(i, data=True))
+    path = []
+    while edges:
+        edges.sort(key=lambda x: x[2]['distance'])
+        shortest_edge = edges[0]
+        path.append(shortest_edge)
+        next_node = shortest_edge[1]
+        used_nodes.append(next_node)
+        edges.extend(list(G.edges(next_node, data=True)))
+        edges = [e for e in edges if e[1] not in used_nodes]
+        
+    return path
+ 
+ 
+def upper_outlier_bound(data, mult = 2.5):
+    Q1 = np.percentile(data, 25)
+    Q3 = np.percentile(data, 75)
+
+    IQR = Q3 - Q1
+
+    #lower_bound = Q1 - 1.5 * IQR
+    upper_bound = Q3 +  mult * IQR
+
+    #data = [x for x in data if (x < upper_bound)]
+
+    return upper_bound
+       
 
 def frames_dist(a,b, source_graph_shared,target_graph_shared, source_image_size, target_image_size):
     if len(a)==1:
