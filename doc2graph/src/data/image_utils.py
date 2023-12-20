@@ -3,6 +3,7 @@ import requests
 import base64
 import json
 import fitz
+import numpy as np
 from PIL import Image, ImageDraw, ImageFont
 
 center = lambda rect: ((rect[0] + rect[2]) / 2, (rect[1] + rect[3]) / 2)
@@ -221,3 +222,9 @@ def get_intersection(box1,box2):
     result = [max(box1[0],box2[0]),max(box1[1],box2[1]),min(box1[2],box2[2]),min(box1[3],box2[3])]
     
     return result
+
+
+def points_distance(p1,p2):
+    delta_x = abs(p1[0]-p2[0])
+    delta_y = abs(p1[1]-p2[1])
+    return np.sqrt(delta_x*delta_x+delta_y+delta_y)

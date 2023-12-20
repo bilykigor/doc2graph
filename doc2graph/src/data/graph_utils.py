@@ -5,7 +5,7 @@ from networkx.algorithms import isomorphism
 
 from difflib import SequenceMatcher
 
-from doc2graph.src.data.image_utils import get_intersection, intersectoin_by_axis, normalize_box
+from doc2graph.src.data.image_utils import points_distance, get_intersection, intersectoin_by_axis, normalize_box
 
 center_x = lambda rect: (rect[0]+rect[2])/2
 center_y = lambda rect: (rect[1]+rect[3])/2
@@ -28,6 +28,28 @@ def box_distance(box_left,
         print(x_dist, y_dist)
         
     distance = x_dist + 3*y_dist
+    
+    return distance
+
+
+def box_distance_for_split(box_left, 
+                 box_right,
+                 verbose=False)->float:
+    """Distance between two boxes."""
+    if intersectoin_by_axis('y',box_left,box_right)>0:
+        x_dist = 0
+    else:
+        x_dist = abs(center_x(box_left)-center_x(box_right))
+        
+    if intersectoin_by_axis('x',box_left,box_right)>0:
+        y_dist = 0
+    else:
+        y_dist = abs(center_y(box_left)-center_y(box_right))
+    
+    if verbose:
+        print(x_dist, y_dist)
+        
+    distance = x_dist + y_dist
     
     return distance
 
@@ -308,7 +330,7 @@ def create_graph(words, boxes, min_share = 0.4):
                         if n not in [left_neighbor,top_neighbor]:
                             neighbors.remove(n)
                             
-        # if ix>=14:
+        # if ix>=18:
         #     print(words[ix],ix, neighbors, left_neighbors, top_neighbor)
         #     print([words[i] for i in neighbors])
         #     break
@@ -318,20 +340,49 @@ def create_graph(words, boxes, min_share = 0.4):
         for n in neighbors:
             skip = False
             
-            current_edge = (center_x(boxes[n]),center_y(boxes[n]), center_x(box_main),center_y(box_main))
+            current_edge = (center_x(boxes[n]), center_y(boxes[n]), center_x(box_main),center_y(box_main))
             if n==left_neighbor:
-                #y = np.mean([center_y(box_main), center_y(boxes[n])])
-                #horizontal_lines.append((y, center_x(boxes[n]), center_x(box_main)))
                 horizontal_edges.append(current_edge)
             else:
                 for edge in horizontal_edges:
                     intersection_point = line_intersection(edge, current_edge)
-                    if intersection_point:
-                        x,y = intersection_point
-                        if get_intersection(edge,(x,y,x,y)):
-                            if get_intersection(current_edge,(x,y,x,y)):
-                                skip = True
-                                break
+                    if not intersection_point:
+                        continue
+                    
+                    if points_distance(intersection_point, current_edge[:2])<1:
+                        continue
+                    
+                    if points_distance(intersection_point, current_edge[-2:])<1:
+                        continue
+                    
+                    if points_distance(intersection_point, edge[:2])<1:
+                        continue
+                    
+                    if points_distance(intersection_point, edge[-2:])<1:
+                        continue
+                    
+                    x,y = intersection_point
+                    
+                    if not get_intersection([
+                                        min(current_edge[0],current_edge[2]),
+                                        min(current_edge[1],current_edge[3]),
+                                        max(current_edge[0],current_edge[2]),
+                                        max(current_edge[1],current_edge[3]),
+                                        ],(x,y,x,y)):
+                        continue
+                    
+                    if not get_intersection([
+                                        min(edge[0],edge[2]),
+                                        min(edge[1],edge[3]),
+                                        max(edge[0],edge[2]),
+                                        max(edge[1],edge[3]),
+                                        ],(x,y,x,y)):
+                        continue
+                        
+                    # if ix==17:
+                    #     print(edge, current_edge, x,y)
+                    skip = True
+                    break
             if skip:    
                 continue    
             
@@ -351,7 +402,7 @@ def create_graph(words, boxes, min_share = 0.4):
             h = box_main[3]-box_main[1]
             h_n = boxes[n][3] - boxes[n][1]
             mean_h = 0.5*(h+h_n)
-            distance = box_distance(boxes[n], box_main)/mean_h
+            distance = box_distance_for_split(boxes[n], box_main)/mean_h
             
             G.add_edge(ix,n, direction=direction1, distance = distance)
             G.add_edge(n,ix, direction=direction2, distance = distance)
@@ -392,48 +443,68 @@ def split_graph(G):
         if find_zone(e[0], zones)!=find_zone(e[1], zones):
             G.remove_edge(e[0],e[1])
             
-            
-def split_graph_by_path(G):
-    path = get_shortest_path(G,0)
-    path_G = nx.from_edgelist(path)
+     
+def split_graph_by_path_vert(G, axis = 1, multiplier = 1.5):
+    
+    splitted_any = False
+    
     while True:
-        zones = [nodes for nodes in nx.connected_components(path_G)]
+        zones = [list(nodes) for nodes in nx.connected_components(G.to_undirected())]
         
-        path = []
         splitted = False
         for zone in zones:
-            zone_edges = path_G.subgraph(zone).edges(data=True)
-            distances = [x[2]['distance'] for x in zone_edges]
+            path = get_shortest_path(G.subgraph(zone),zone[0])
             
-            bound_horizontal = upper_outlier_bound(distances,3.5)
-            bound_all = upper_outlier_bound(distances,1.5)
+            if axis==1:
+                edges_vert = [x for x in path if (x[2]['direction'] not in ['left','right'])]
+            else:
+                edges_vert = [x for x in path if (x[2]['direction'] in ['left','right'])]
+            distances_vert = [x[2]['distance'] for x in edges_vert]
+            # print(distances_vert)
+            # if distances_vert:
+            #     print(max(distances_vert))
             
-            edges_horizontal = [x for x in zone_edges 
-                     if x[2]['direction'] in ['left','right'] and
-                        x[2]['distance'] < bound_horizontal]
+            path = []
+            if multiplier>0 and distances_vert:
+                bound_vert = upper_outlier_bound(distances_vert,multiplier)
+                edges_vert = [x for x in edges_vert if x[2]['distance'] < bound_vert]
             
-            edges_other = [x for x in zone_edges
-                     if x[2]['direction'] not in ['left','right'] and
-                        x[2]['distance'] < bound_all]
+            path.extend(edges_vert)
+            
+            if axis==1:
+                edges_horizontal = [x for x in G.subgraph(zone).edges(data = True) if x[2]['direction'] in ['left','right']]
+            else:
+                edges_horizontal = [x for x in G.subgraph(zone).edges(data = True) if x[2]['direction'] not in ['left','right']]
                 
             path.extend(edges_horizontal)
-            path.extend(edges_other)
-                
-            if len(zone_edges)>len(edges_horizontal) + len(edges_other):
-                splitted = True
             
-        path_G = nx.from_edgelist(path)
-        
+            path_G = nx.from_edgelist(path)
+            sub_zones = [nodes for nodes in nx.connected_components(path_G)]
+
+            if len(sub_zones)>1:
+                splitted = True
+                splitted_any = True
+                
+                edges = list(G.edges())
+                for e in edges:
+                    if find_zone(e[0], sub_zones)!=find_zone(e[1], sub_zones):
+                        G.remove_edge(e[0],e[1])
+
         if not splitted:
             break
     
-    zones = [nodes for nodes in nx.connected_components(path_G)]
-    
-    edges = list(G.edges())
-    for e in edges:
-        if find_zone(e[0], zones)!=find_zone(e[1], zones):
-            G.remove_edge(e[0],e[1])
-
+    return splitted_any
+        
+            
+def split_graph_by_path(G, vert_multiplier = 1.5, horiz_multiplier = 1.5):
+    while True:
+        splited = split_graph_by_path_vert(G, axis = 1, multiplier = vert_multiplier)
+        if not splited:
+            splited = split_graph_by_path_vert(G, axis = 0, multiplier = horiz_multiplier)
+            
+        if not splited:
+            return
+        
     
 def Conv(G):
     for node in G.nodes():
