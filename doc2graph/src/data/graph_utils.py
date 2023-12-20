@@ -38,8 +38,12 @@ def box_distance_for_split(box_left,
     """Distance between two boxes."""
     if intersectoin_by_axis('y',box_left,box_right)>0:
         x_dist = 0
+    elif box_left[2]<=box_right[0]:
+        x_dist = box_right[0] - box_left[2]
+    elif box_right[2]<=box_left[0]:
+        x_dist = box_left[0] - box_right[2]
     else:
-        x_dist = abs(center_x(box_left)-center_x(box_right))
+        raise
         
     if intersectoin_by_axis('x',box_left,box_right)>0:
         y_dist = 0
@@ -1005,6 +1009,7 @@ def get_shortest_path(G,i):
     path = []
     while edges:
         edges.sort(key=lambda x: x[2]['distance'])
+        #print(edges)
         shortest_edge = edges[0]
         path.append(shortest_edge)
         next_node = shortest_edge[1]
