@@ -288,6 +288,8 @@ def create_graph(words, boxes, min_share = 0.4):
                     if len(neighbors)==len(above_neighbors):
                         above_neighbors = sorted(above_neighbors, key=lambda i: boxes[i][0])
                         neighbors = above_neighbors[:1]
+                        
+        
         #----------------------------------------------------------------------     
         #get left_neighbor, top_neighbor
         left_neighbors = [i for i in neighbors if intersectoin_by_axis('x',boxes[ix], boxes[i])>=min_share]
@@ -314,6 +316,8 @@ def create_graph(words, boxes, min_share = 0.4):
             top_neighbor = top_neighbors[0]
         #----------------------------------------------------------------------         
         
+         
+        
         # Only one egde from below
         above_neighbors = [i for i in neighbors if boxes[i][3]<center_y(box_main) and i!=left_neighbor]
         for above_neighbor in above_neighbors:
@@ -329,6 +333,7 @@ def create_graph(words, boxes, min_share = 0.4):
                     break
         
         
+        
         #----------------------------------------------------------------------     
         # Only one egde from right
         left_neighbors = [i for i in neighbors if center_x(boxes[i])<=box_main[0] and i!=top_neighbor]# and i!=left_neighbor]
@@ -342,12 +347,12 @@ def create_graph(words, boxes, min_share = 0.4):
                     left_neighbor = None
                 break
                     
-                    
+                
         #----------------------------------------------------------------------    
         
         # Remove cross
         above_neighbors = [i for i in neighbors if boxes[i][3]<center_y(box_main)]
-        above_neighbors = sorted(above_neighbors, key=lambda i: (intersectoin_by_axis('y',box_main,boxes[i]),-boxes[i][0]), reverse=True)
+        above_neighbors = sorted(above_neighbors, key=lambda i: (boxes[i][1], intersectoin_by_axis('y',box_main,boxes[i]),-boxes[i][0]), reverse=True)
         #above_neighbors = sorted(above_neighbors, key=lambda i: boxes[i][2], reverse=True)
         if top_neighbor:
             if len(above_neighbors)>1:
@@ -355,7 +360,10 @@ def create_graph(words, boxes, min_share = 0.4):
                 if center_y(boxes[top_neighbor])>=center_y(boxes[diag_neighbor]):
                     neighbors.remove(diag_neighbor) #diag cant by above top
                     
-        
+        # if ix>=13:
+        #     print(words[ix],ix, neighbors, above_neighbors, left_neighbors,left_neighbor, top_neighbor)
+        #     print([words[i] for i in neighbors])
+        #     break   
         #----------------------------------------------------------------------     
           
         # Remove if neighbors are linked, except left and top
@@ -379,10 +387,7 @@ def create_graph(words, boxes, min_share = 0.4):
                             neighbors.remove(node)
                             left_neighbors.remove(node)
                             
-        # if ix>=48:
-        #     print(words[ix],ix, neighbors, left_neighbors,left_neighbor, top_neighbor)
-        #     print([words[i] for i in neighbors])
-        #     break
+        
         #----------------------------------------------------------------------      
         
         # Double check remove cross            
@@ -451,7 +456,7 @@ def create_graph(words, boxes, min_share = 0.4):
             h = box_main[3]-box_main[1]
             h_n = boxes[n][3] - boxes[n][1]
             mean_h = 0.5*(h+h_n)
-            distance = box_distance_for_split(boxes[n], box_main)/mean_h
+            distance = box_distance_for_split(boxes[n], box_main)#/mean_h
             
             G.add_edge(ix,n, direction=direction1, distance = distance)
             G.add_edge(n,ix, direction=direction2, distance = distance)
@@ -494,7 +499,6 @@ def split_graph(G):
             
      
 def split_graph_by_path_vert(G, axis = 1, multiplier = 1.5):
-    
     splitted_any = False
     
     while True:
@@ -503,12 +507,13 @@ def split_graph_by_path_vert(G, axis = 1, multiplier = 1.5):
         splitted = False
         edges_to_remove = []
         for zone in zones:
-            # Try split only zones larger then 4 items
+            removed = None
+            debug = False
+            
             if len(zone)<4:
                 continue
             
             is_strict = strict_frame(G.subgraph(zone))
-            
             if is_strict:
                 continue
             
@@ -520,39 +525,32 @@ def split_graph_by_path_vert(G, axis = 1, multiplier = 1.5):
                 edges_vert = [x for x in path if (x[2]['direction'] in ['left','right'])]
             edges_vert.sort(key = lambda x: x[2]['distance'])
             
-            while True:
-                distances_vert = [x[2]['distance'] for x in edges_vert]
-                #distances_vert = [x[2]['distance'] for x in path]
-                
-                if multiplier>0 and distances_vert:
-                    bound_vert = upper_outlier_bound(distances_vert,multiplier)
-                    #print(bound_vert)
-                    if max(distances_vert)>bound_vert: #remove largest one
-                        edges_vert = edges_vert[:-1]
-                        #edges_vert = [x for x in edges_vert if x[2]['distance'] < bound_vert]
-                    else:
-                        break
-                else:
-                    break
-                
-                break
+            distances_vert = [x[2]['distance'] for x in edges_vert]
             
-            path = []
-            path.extend(edges_vert)
+            if multiplier>0 and distances_vert:
+                bound_vert = upper_outlier_bound(distances_vert,multiplier)
+                
+                if max(distances_vert)>bound_vert: #remove largest one
+                    e = edges_vert[-1]
+                    G.remove_edge(e[0],e[1])
+                    G.remove_edge(e[1],e[0])
+                    
+                    edges_vert = edges_vert[:-1]
+                    removed = e
             
             if axis==1:
                 edges_horizontal = [x for x in G.subgraph(zone).edges(data = True) if x[2]['direction'] in ['left','right']]
             else:
                 edges_horizontal = [x for x in G.subgraph(zone).edges(data = True) if x[2]['direction'] not in ['left','right']]
             
+            path = []
+            path.extend(edges_vert)
             path.extend(edges_horizontal)
-            path.sort(key = lambda x: x[2]['distance'])
-            
             path_G = nx.from_edgelist(path)
-            sub_zones = [list(nodes) for nodes in nx.connected_components(path_G)]
-            flatten_sub_zones = [x for l in sub_zones for x in l ]
             
-            if (len(sub_zones)>1) or (len(flatten_sub_zones)!=len(zone)):
+            sub_zones = [list(nodes) for nodes in nx.connected_components(path_G)]
+            
+            if (len(sub_zones)>1) or removed:
                 splitted = True
                 splitted_any = True
                 
@@ -560,7 +558,7 @@ def split_graph_by_path_vert(G, axis = 1, multiplier = 1.5):
                 for e in edges:
                     if find_zone(e[0], sub_zones)!=find_zone(e[1], sub_zones):
                         G.remove_edge(e[0],e[1])
-        
+            
         if not splitted:
             break
     
@@ -568,13 +566,20 @@ def split_graph_by_path_vert(G, axis = 1, multiplier = 1.5):
         
             
 def split_graph_by_path(G, vert_multiplier = 1.5, horiz_multiplier = 1.5):
+    G_copy = G.copy()
     while True:
-        splited = split_graph_by_path_vert(G, axis = 1, multiplier = vert_multiplier)
+        splited = split_graph_by_path_vert(G_copy, axis = 1, multiplier = vert_multiplier)
         if not splited:
-            splited = split_graph_by_path_vert(G, axis = 0, multiplier = horiz_multiplier)
+            splited = split_graph_by_path_vert(G_copy, axis = 0, multiplier = horiz_multiplier)
             
         if not splited:
-            return
+            break
+        
+    sub_zones = [list(nodes) for nodes in nx.connected_components(G_copy.to_undirected())]
+    edges = list(G.edges())
+    for e in edges:
+        if find_zone(e[0], sub_zones)!=find_zone(e[1], sub_zones):
+            G.remove_edge(e[0],e[1])
         
     
 def Conv(G):
@@ -1057,18 +1062,36 @@ def get_max_graph(source_graph_shared, target_graph_shared, source_image_size, t
     return max_M
 
 
-def get_shortest_path(G,i):
-    used_nodes=[i]
-    edges = list(G.edges(i, data=True))
-    path = []
+def get_shortest_path(G, start_node = None, start_edge= None):
+    if start_edge is not None:
+        used_nodes=[start_edge[0],start_edge[1]]
+        edges = []
+        edges.extend(list(G.edges(start_edge[0], data=True)))
+        edges.extend(list(G.edges(start_edge[1], data=True)))
+        path = [(start_edge[0],start_edge[1],G.get_edge_data(start_edge[0],start_edge[1]))]
+        edges = [e for e in edges if e[1] not in used_nodes]
+    elif start_node is None:
+        start_node = list(G.nodes())[0]
+        used_nodes=[start_node]
+        edges = list(G.edges(start_node, data=True))
+        path = []
+    else:
+        used_nodes=[start_node]
+        edges = list(G.edges(start_node, data=True))
+        path = []
+    
     while edges:
         edges.sort(key=lambda x: x[2]['distance'])
         #print(edges)
         shortest_edge = edges[0]
         path.append(shortest_edge)
+        #print(shortest_edge)
         next_node = shortest_edge[1]
+        next_edges = list(G.edges(next_node, data=True))
+        #print(next_edges)
+        edges.extend(next_edges)
+        
         used_nodes.append(next_node)
-        edges.extend(list(G.edges(next_node, data=True)))
         edges = [e for e in edges if e[1] not in used_nodes]
         
     return path
