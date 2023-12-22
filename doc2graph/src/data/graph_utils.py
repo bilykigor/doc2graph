@@ -114,9 +114,12 @@ def get_lines(G, min_share=0.8):
             continue
         
         line =  get_line(G, i, min_share)
+        line = list(line)
         lines.append(line)
             
         used.extend(line)    
+    
+    lines.sort(key = lambda x: G.nodes[x[0]]['box'][1])
         
     return lines   
 
@@ -1211,3 +1214,53 @@ def frames_dist(a,b, source_graph_shared,target_graph_shared, source_image_size,
         return s1*s2
     
     return 0
+
+
+def graph_to_text(G):
+    
+    zones = [list(nodes) for nodes in nx.connected_components(G.to_undirected())]
+     
+    res = ""
+    
+    for zone in zones:
+        graph = G.subgraph(zone)
+    
+        lines = get_lines(graph, min_share=0.5)
+        
+        flat_list = [item for sublist in lines for item in sublist]
+
+        used=[]
+        for n in sorted(list(graph.nodes())):
+            box = graph.nodes[n]['box']
+            h = box[3]-box[1]
+            text = graph.nodes[n]['text']
+            
+            if n in used:
+                continue
+            
+            if n not in flat_list:
+                if used:
+                    prev_node = used[-1]
+                    prev_box = graph.nodes[prev_node]['box']
+                    if box[1]-prev_box[1]>2*h:
+                        res +="\n"
+                
+                res +="text\n"
+                used.append(n)
+            else:
+                for line in lines:
+                    if n in line:
+                        if used:
+                            prev_node = used[-1]
+                            prev_box = graph.nodes[prev_node]['box']
+                            if box[1]-prev_box[1]>2*h:
+                                res +="\n"
+                    
+                        line = sorted(line, key=lambda i: graph.nodes[i]['box'][0])
+                        res +=','.join([graph.nodes[i]['text'] for i in line])
+                        res +="\n"
+                        used.extend(line)
+                        break
+        res +="\n"
+                
+    return res

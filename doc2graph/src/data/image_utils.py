@@ -203,6 +203,8 @@ def draw_graph(img, G, c = 'blue', nodes = None):
         draw.ellipse((tuple(x-4 for x in key_center) + tuple(x+4 for x in key_center)), fill = 'red')
         draw.ellipse((tuple(x-4 for x in value_center) + tuple(x+4 for x in value_center)), fill = 'red')
         draw.line((key_center, value_center), fill='red', width=3)
+        
+    return img
 
 
 def get_intersection(box1,box2):
