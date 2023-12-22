@@ -288,7 +288,7 @@ def create_graph(words, boxes, min_share = 0.4):
                     if len(neighbors)==len(above_neighbors):
                         above_neighbors = sorted(above_neighbors, key=lambda i: boxes[i][0])
                         neighbors = above_neighbors[:1]
-                        
+            del above_neighbors           
         
         #----------------------------------------------------------------------     
         #get left_neighbor, top_neighbor
@@ -314,9 +314,11 @@ def create_graph(words, boxes, min_share = 0.4):
                 #print('diff',G.nodes[ix]['text'],G.nodes[top_neighbor]['text'])
         elif top_neighbors:
             top_neighbor = top_neighbors[0]
+            
+        del left_neighbors
+        del top_neighbors
         #----------------------------------------------------------------------         
         
-         
         
         # Only one egde from below
         above_neighbors = [i for i in neighbors if boxes[i][3]<center_y(box_main) and i!=left_neighbor]
@@ -332,22 +334,22 @@ def create_graph(words, boxes, min_share = 0.4):
                     neighbors.remove(above_neighbor)
                     break
         
-        
-        
+        del above_neighbors
         #----------------------------------------------------------------------     
         # Only one egde from right
         left_neighbors = [i for i in neighbors if center_x(boxes[i])<=box_main[0] and i!=top_neighbor]# and i!=left_neighbor]
-        for node in left_neighbors.copy():
+        for node in left_neighbors:
             current_distance = box_distance(G.nodes[node]['box'], box_main)
             right_neighbors = [n for n in G.neighbors(node) if G.edges[(node,n)]['direction'] in ['right','down_right']]
             for right_neighbor in right_neighbors:
                 neighbors.remove(node)
-                left_neighbors.remove(node)
                 if node==left_neighbor:
                     left_neighbor = None
                 break
                     
-                
+        for node in left_neighbors:
+            if node not in neighbors:
+                left_neighbors.remove(node)        
         #----------------------------------------------------------------------    
         
         # Remove cross
@@ -360,6 +362,11 @@ def create_graph(words, boxes, min_share = 0.4):
                 if center_y(boxes[top_neighbor])>=center_y(boxes[diag_neighbor]):
                     neighbors.remove(diag_neighbor) #diag cant by above top
                     
+                    if diag_neighbor in left_neighbors:
+                        left_neighbors.remove(diag_neighbor)
+        
+        del above_neighbors
+                     
         # if ix>=13:
         #     print(words[ix],ix, neighbors, above_neighbors, left_neighbors,left_neighbor, top_neighbor)
         #     print([words[i] for i in neighbors])
@@ -381,11 +388,11 @@ def create_graph(words, boxes, min_share = 0.4):
         # Diag neighbors can be only above left neighbor
         if left_neighbor:
             if len(left_neighbors)>1:
-                for node in left_neighbors.copy():
-                    if node!=left_neighbor:
-                        if center_y(boxes[node])>center_y(boxes[left_neighbor]):
-                            neighbors.remove(node)
-                            left_neighbors.remove(node)
+                for node in neighbors:
+                    if node in left_neighbors:
+                        if node!=left_neighbor:
+                            if center_y(boxes[node])>center_y(boxes[left_neighbor]):
+                                neighbors.remove(node)
                             
         
         #----------------------------------------------------------------------      
