@@ -5,7 +5,7 @@ from networkx.algorithms import isomorphism
 
 from difflib import SequenceMatcher
 
-from doc2graph.src.data.image_utils import points_distance, get_intersection, intersectoin_by_axis, normalize_box
+from doc2graph.src.data.image_utils import find_segment_by_image, points_distance, get_intersection, intersectoin_by_axis, normalize_box
 
 center_x = lambda rect: (rect[0]+rect[2])/2
 center_y = lambda rect: (rect[1]+rect[3])/2
@@ -335,6 +335,8 @@ def create_graph(words, boxes, min_share = 0.4):
                     G.remove_edge(below_neighbor, above_neighbor)
                 else:
                     neighbors.remove(above_neighbor)
+                    if above_neighbor==top_neighbor:
+                        top_neighbor = None
                     break
         
         del above_neighbors
@@ -342,13 +344,12 @@ def create_graph(words, boxes, min_share = 0.4):
         # Only one egde from right
         left_neighbors = [i for i in neighbors if center_x(boxes[i])<=box_main[0] and i!=top_neighbor]# and i!=left_neighbor]
         for node in left_neighbors:
-            current_distance = box_distance(G.nodes[node]['box'], box_main)
+            #current_distance = box_distance(G.nodes[node]['box'], box_main)
             right_neighbors = [n for n in G.neighbors(node) if G.edges[(node,n)]['direction'] in ['right','down_right']]
-            for right_neighbor in right_neighbors:
+            if right_neighbors:
                 neighbors.remove(node)
                 if node==left_neighbor:
                     left_neighbor = None
-                break
                     
         for node in left_neighbors:
             if node not in neighbors:
@@ -399,6 +400,7 @@ def create_graph(words, boxes, min_share = 0.4):
                             
         
         #----------------------------------------------------------------------      
+        horizontal_edges.append((box_main[0], box_main[1],box_main[2],box_main[3]))
         
         # Double check remove cross            
         for n in neighbors:
@@ -428,19 +430,19 @@ def create_graph(words, boxes, min_share = 0.4):
                     x,y = intersection_point
                     
                     if not get_intersection([
-                                        min(current_edge[0],current_edge[2]),
-                                        min(current_edge[1],current_edge[3]),
-                                        max(current_edge[0],current_edge[2]),
-                                        max(current_edge[1],current_edge[3]),
-                                        ],(x,y,x,y)):
+                                        min(current_edge[0],current_edge[2])-1,
+                                        min(current_edge[1],current_edge[3])-1,
+                                        max(current_edge[0],current_edge[2])+1,
+                                        max(current_edge[1],current_edge[3])+1,
+                                        ],(x-1,y-1,x+1,y+1)):
                         continue
                     
                     if not get_intersection([
-                                        min(edge[0],edge[2]),
-                                        min(edge[1],edge[3]),
-                                        max(edge[0],edge[2]),
-                                        max(edge[1],edge[3]),
-                                        ],(x,y,x,y)):
+                                        min(edge[0],edge[2])-1,
+                                        min(edge[1],edge[3])-1,
+                                        max(edge[0],edge[2])+1,
+                                        max(edge[1],edge[3])+1,
+                                        ],(x-1,y-1,x+1,y+1)):
                         continue
                         
                     # if ix==17:
@@ -885,6 +887,54 @@ def find_zone(node, zones):
     return -1
 
 
+def find_nodes_in_box(target_box,
+                      G,
+                      threadhold = 0.8):                   
+    matched_nodes=[]
+    
+    area_B = (target_box[3]-target_box[1])*(target_box[2]-target_box[0])
+    
+    try:
+        for node in G.nodes():
+            box = G.nodes[node]['box']
+            res = get_intersection(box,target_box)
+            if res:
+                area = (res[3]-res[1])*(res[2]-res[0])
+                area_A = (box[3]-box[1])*(box[2]-box[0])
+                
+                area = area/min([area_A,area_B])
+                if area>threadhold:
+                    matched_nodes.append(node)
+                    
+    except Exception as exception:
+        print(f'Failed to find_nodes_in_box: {target_box} {exception}')
+    
+    return matched_nodes
+
+
+def get_target_key_nodes(source_key_nodes, source_image, target_image, source_G, target_G, pairwise_dist,nodes_dist_threshold):
+    #Find by graph
+    target_key_nodes = []
+    
+    if len(source_key_nodes)==1:      
+        target_key_node = find_target_node_by_text(source_key_nodes[0], 
+                                source_G,
+                                target_G,
+                                pairwise_dist,
+                                threshold=nodes_dist_threshold)
+        target_key_nodes = [target_key_node]
+        
+        # if not found by graph, look with image
+        if not target_key_node:
+            source_crop = source_image.crop(source_G.nodes[source_key_nodes[0]]['box'])
+            target_key_box = find_segment_by_image(source_crop, target_image)
+            if target_key_box:
+                target_key_nodes = find_nodes_in_box(target_key_box, target_G)
+    else:
+        raise        
+    return target_key_nodes
+
+
 def find_target_node_by_text(ix,
                             source_G,
                             target_G,
@@ -1216,7 +1266,7 @@ def frames_dist(a,b, source_graph_shared,target_graph_shared, source_image_size,
     return 0
 
 
-def graph_to_text(G):
+def graph_to_text(G, separator=','):
     
     zones = [list(nodes) for nodes in nx.connected_components(G.to_undirected())]
      
@@ -1245,7 +1295,7 @@ def graph_to_text(G):
                     if box[1]-prev_box[1]>2*h:
                         res +="\n"
                 
-                res +="text\n"
+                res += f"{text}\n"
                 used.append(n)
             else:
                 for line in lines:
@@ -1257,7 +1307,7 @@ def graph_to_text(G):
                                 res +="\n"
                     
                         line = sorted(line, key=lambda i: graph.nodes[i]['box'][0])
-                        res +=','.join([graph.nodes[i]['text'] for i in line])
+                        res += separator.join([graph.nodes[i]['text'] for i in line])
                         res +="\n"
                         used.extend(line)
                         break

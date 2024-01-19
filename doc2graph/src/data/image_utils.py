@@ -3,12 +3,80 @@ import requests
 import base64
 import json
 import fitz
+import uuid
+import awswrangler as wr
 import numpy as np
+from time import sleep
+import boto3
+import cv2
+import pytesseract
 from PIL import Image, ImageDraw, ImageFont
+
+from difflib import SequenceMatcher
 
 center = lambda rect: ((rect[0] + rect[2]) / 2, (rect[1] + rect[3]) / 2)
 
-def get_word_boxes(image_path, host):
+def find_segment_by_image(source_crop, 
+                 target_image, 
+                 threshold = 0.85,
+                 text_threshold = 0.8):
+    """Finds source_crop image in target_image."""
+    
+    source_crop_cv2 = cv2.cvtColor(np.array(source_crop), cv2.COLOR_RGB2BGR)
+    target_image_cv2 = cv2.cvtColor(np.array(target_image), cv2.COLOR_RGB2BGR)
+    
+    w, h = source_crop_cv2.shape[:-1]
+    
+    source_crop_cv2 = source_crop_cv2[:, :, :3]
+    target_image_cv2 = target_image_cv2[:, :, :3]
+    
+    res = cv2.matchTemplate(target_image_cv2, source_crop_cv2, cv2.TM_CCORR_NORMED)
+    _,score,_,point = cv2.minMaxLoc(res)
+    
+    found_box = None
+    
+    if score<threshold:
+        print('Segment not found')
+        #plt.imshow(Image.fromarray(source_crop_cv2))
+        return None
+    
+    loc = [point]
+    
+    if len(loc)==0:
+        print('Segment not found')
+        #plt.imshow(Image.fromarray(source_crop_cv2))
+        return None
+    
+    if len(loc)>1:
+        print('Segment found multiple times')
+        #print(loc)
+        #plt.imshow(Image.fromarray(source_crop_cv2))
+        return None
+    
+    #print('Segment found')
+    pt = loc[0]
+    tupleOfTuples = (pt, (pt[0] + h, pt[1] + w))
+    found_box = list(sum(tupleOfTuples, ()))
+    
+    # Compare text in source and target images 
+    res = pytesseract.image_to_data(source_crop, lang='eng', config='--psm 7',output_type=pytesseract.Output.DICT)
+    source_crop_text = ' '.join(res['text']).strip()
+     
+    res = pytesseract.image_to_data(target_image.crop(found_box), lang='eng', config='--psm 7',output_type=pytesseract.Output.DICT)
+    static_anchor_target_text = ' '.join(res['text']).strip()
+    
+    s = SequenceMatcher(None, source_crop_text, static_anchor_target_text)
+    
+    if s.ratio()<text_threshold:
+        print(f'Text not match: {source_crop_text} -> {static_anchor_target_text}', s.ratio())
+        return None
+    
+    print('IMAGES', source_crop_text,'--->',static_anchor_target_text)
+           
+    return found_box
+
+
+def get_word_boxes(image_path, host, aws=None, n_tries=1):
     pil_image = file_to_images(image_path)[0]
     width, height = pil_image.size
     with io.BytesIO() as buffer:
@@ -16,22 +84,122 @@ def get_word_boxes(image_path, host):
         image_bytes = buffer.getvalue()
         
     data = {
-        "image_bytes":base64.b64encode(image_bytes).decode("utf8")
+        "image_bytes":base64.b64encode(image_bytes).decode("utf8"),
     }
+    
+    if aws:
+        data['aws'] = aws
+        
+    boto3_session = boto3.Session(**aws['credentials'])
 
-    response = requests.post(f"{host}",
-                    data=json.dumps(data),
-                    headers={'content-type':'application/json',
-                            'x-amzn-RequestId': '84cad557-a68f-45db-9c01-79449f0aeecb'},#image/jpg
-                    timeout=29
-                    )
+    request_id = str(uuid.uuid4().hex)
+    print(f'request_id: {request_id}| Requesting lambda')  
+    
+    data['aws']['output_file'] = f'tmp/{request_id}.json'
+    
+    n_tried=0
+    while True:
+        try:
+            response = requests.post(host,
+                            data=json.dumps(data),
+                            headers={
+                                'content-type':'application/json',
+                                'x-amzn-RequestId':request_id
+                                },#image/jpg
+                            timeout=29
+                            )
+            msg = response.content.decode("UTF-8")
+        except requests.exceptions.ReadTimeout:
+            response = requests.Response()
+            response.status_code = 504
+            msg = 'timeout'
+        
+        if response.status_code!=200:
+            if response.status_code==504:
+                #print(msg)
+                n_tried+=1
+                
+                if n_tried>=n_tries:
+                    # print(f'Reached {n_tries} n_tries')
+                    
+                    print(f'Looking to download {data["aws"]["output_file"]}')
+                    exception = ''
+                    for _ in range(12):
+                        sleep(10)
+                        
+                        try:
+                            res = wr.s3.read_json(f's3://{aws["bucket_name"]}/{data["aws"]["output_file"]}', boto3_session=boto3_session)
+                            res={
+                                'words':res['words'].to_list(),
+                                'boxes':res['boxes'].to_list(),
+                                }
+                            
+                            res['boxes'] = [unnormalize_box(bbox, width, height) for bbox in res['boxes']]
+    
+                            return res
+                        except Exception as exp:
+                            exception = str(exp)
+                            pass
+                        
+                    print(f'get_words_boxes_paddle| Failed to read results from s3 {exception}')
+                    return None
+                    
+                sleep(90)
+                continue
+            
+            print(f'get_words_boxes_paddle| {msg}')
+            
+            return None
+        
+        break
     
     ict_str = response.content.decode("UTF-8")
     res = json.loads(ict_str)
     
     res['boxes'] = [unnormalize_box(bbox, width, height) for bbox in res['boxes']]
+
+    return res 
+
+
+def get_intersection_area(box1, box2):
+    """Returns intersection of two rectangles."""
+    if box1[3]<=box2[1]:
+        return 0.0
     
-    return res
+    if box2[3]<=box1[1]:
+        return 0.0
+    
+    if box1[2]<=box2[0]:
+        return 0.0
+    
+    if box2[2]<=box1[0]:
+        return 0.0
+    
+    result = [max(box1[0],box2[0]),max(box1[1],box2[1]),min(box1[2],box2[2]),min(box1[3],box2[3])]
+    
+    area = float((result[2]-result[0])*(result[3]-result[1]))
+    
+    return area
+
+
+def find_intersected(target_box, boxes, threadhold=0.0):
+    """looks for intersected boxes with target_box"""
+    matched_boxes=[]
+    
+    try:
+        for box in boxes:
+            area_a = (box[2]-box[0])*(box[3]-box[1])
+            area_b = (target_box[2]-target_box[0])*(target_box[3]-target_box[1])
+            area = get_intersection_area(box,target_box)/min([area_a,area_b])
+            if area>threadhold:
+                matched_boxes.append((box,area))
+    except Exception as exception:
+        print(f'Error find_intersected: {exception}')
+        print(target_box, boxes)
+    
+    matched_boxes = sorted(matched_boxes, key=lambda tup: tup[1])
+    
+    return matched_boxes
 
 
 def file_to_images(file, gray=False):
@@ -122,45 +290,52 @@ def intersectoin_by_axis(axis: str, rect_src : list, rect_dst : list):
     return area
 
 
-def draw_boxes(image, boxes_all, boxes, labels=None, links = None, scores = None, color='green', width=2):
-    draw = ImageDraw.Draw(image, "RGBA")
-    font = ImageFont.load_default()
-    
-    if links:
-        for idx in range(len(links['src'])):
-            key_center = center(boxes_all[links['src'][idx]])
-            value_center = center(boxes_all[links['dst'][idx]])
-            draw.line((key_center, value_center), fill='violet', width=2)
-            
-    if labels:
-        for box,label in zip(boxes,labels):
-            if color=='green':
-                fill=(0, 255, 0, 127)
-            else:
-                fill=(255, 0, 0, 127)
-            draw.rectangle(box, outline=(color), width=width,fill=fill)
-            text_position = (box[0]+10, box[1]-10)
-            text = str(label)
-            draw.text(text_position, text=text, font=font, fill=(255,0, 0)) 
-        if scores:
-            for box,label, score in zip(boxes,labels, scores):
-                if color=='green':
-                    fill=(0, 255, 0, 127)
-                else:
-                    fill=(255, 0, 0, 127)
-                draw.rectangle(box, outline=(color), width=width,fill=fill)
-                text_position = (box[0]+10, box[1]-10)
-                text = '%s-%6.2f' % (label, score)
-                draw.text(text_position, text=text, font=font, fill=(255,0, 0)) 
-    else:
-        for box in boxes:
-            if color=='green':
-                fill=(0, 255, 0, 127)
-            else:
-                fill=(255, 0, 0, 127)
-            draw.rectangle(box, outline=(color), width=width,fill=fill)
-        
+def draw_boxes(image, boxes, color='green', width=2):
+    draw = ImageDraw.Draw(image)
+    for box in boxes:
+        draw.rectangle(box,outline=color,width=2)#outline=color
     return image
+
+
+# def draw_boxes(image, boxes_all, boxes, labels=None, links = None, scores = None, color='green', width=2):
+#     draw = ImageDraw.Draw(image, "RGBA")
+#     font = ImageFont.load_default()
+    
+#     if links:
+#         for idx in range(len(links['src'])):
+#             key_center = center(boxes_all[links['src'][idx]])
+#             value_center = center(boxes_all[links['dst'][idx]])
+#             draw.line((key_center, value_center), fill='violet', width=2)
+            
+#     if labels:
+#         for box,label in zip(boxes,labels):
+#             if color=='green':
+#                 fill=(0, 255, 0, 127)
+#             else:
+#                 fill=(255, 0, 0, 127)
+#             draw.rectangle(box, outline=(color), width=width,fill=fill)
+#             text_position = (box[0]+10, box[1]-10)
+#             text = str(label)
+#             draw.text(text_position, text=text, font=font, fill=(255,0, 0)) 
+#         if scores:
+#             for box,label, score in zip(boxes,labels, scores):
+#                 if color=='green':
+#                     fill=(0, 255, 0, 127)
+#                 else:
+#                     fill=(255, 0, 0, 127)
+#                 draw.rectangle(box, outline=(color), width=width,fill=fill)
+#                 text_position = (box[0]+10, box[1]-10)
+#                 text = '%s-%6.2f' % (label, score)
+#                 draw.text(text_position, text=text, font=font, fill=(255,0, 0)) 
+#     else:
+#         for box in boxes:
+#             if color=='green':
+#                 fill=(0, 255, 0, 127)
+#             else:
+#                 fill=(255, 0, 0, 127)
+#             draw.rectangle(box, outline=(color), width=width,fill=fill)
+        
+#     return image
 
 
 def unnormalize_box(bbox, width, height):
@@ -181,15 +356,19 @@ def normalize_box(box, width, height):
     ]
     
     
-def draw_graph(img, G, c = 'blue', nodes = None):
+def draw_graph(img, G, c = 'blue', nodes = None, blank = False, boxes = True):
+    if blank:
+        img = Image.new("RGB", img.size, "white")
+
     draw = ImageDraw.Draw(img)
 
-    for node in G.nodes():
-        if nodes:
-            if node not in nodes:
-                continue
-        box = G.nodes[node]['box']
-        draw.rectangle(box, outline=c, width=3)
+    if boxes:
+        for node in G.nodes():
+            if nodes:
+                if node not in nodes:
+                    continue
+            box = G.nodes[node]['box']
+            draw.rectangle(box, outline=c, width=3)
     
     for edge in G.edges():
         if nodes:
