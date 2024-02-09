@@ -1065,39 +1065,49 @@ def match_neighbors(gu, hu, source_G, target_H):
         for hv in target_H.neighbors(hu):
             if source_G.nodes[gv]['text'] == target_H.nodes[hv]['text']:
                 if source_G.edges[(gu,gv)]['direction'] == target_H.edges[(hu,hv)]['direction']:
-                    d1 = source_G.edges[(gu,gv)]['distance']
-                    d2 = target_H.edges[(hu,hv)]['distance']
                     matched.add((gv, hv))
+                    # d1 = source_G.edges[(gu,gv)]['distance']
+                    # d2 = target_H.edges[(hu,hv)]['distance']
+                    
                     # if d1<5 and d2<5:
                     #     matched.add((gv, hv))
                     # else:
                     #     #if abs(d1/d2-1)<0.1 and abs(d1-d2)<4:
                     #     matched.add((gv, hv))
-                    #     #if gv==45:
-                    #     #print(gu, source_G.nodes[gu]['text'],source_G.nodes[gv]['text'],d1,d2)
     return matched
 
 
-def cbfs_matching(source_G, target_H, i, j):
-    if source_G.nodes[i]['text']!=target_H.nodes[j]['text']:
-        return []
+def cbfs_matching(G, H, i, j):
+    """Find largest shared nodes in G, H, if start at nodes i,j respectively
+
+    Args:
+        G (graph): graph
+        H (graph): graph
+        i (int): index of start node in G
+        j (int): index of start node in H
+
+    Returns:
+        List(Tuple): list of tuples, each tuple has index of node from G and H which are matched
+    """
     
-    #if source_G.nodes[i]['text'] in ('<D>','<A>','<N>','<C>'):
-    #    return []
+    if G.nodes[i]['text']!=H.nodes[j]['text']:
+        return [], []
+    
     # Initialize queues for both graphs
     GQ = deque()
     HQ = deque()
 
     # Initialize colors for all nodes in both graphs
-    colors_G = {v: 'WHITE' for v in source_G}
-    colors_H = {v: 'WHITE' for v in target_H}
+    colors_G = {v: 'WHITE' for v in G}
+    colors_H = {v: 'WHITE' for v in H}
 
     # Set starting nodes' colors to GRAY
     colors_G[i] = 'GRAY'
     colors_H[j] = 'GRAY'
 
     # Initialize matching set
-    M = [(i, j)]
+    M_nodes = [(i, j)]
+    M_edges = []
 
     # Enqueue starting nodes
     GQ.append(i)
@@ -1107,28 +1117,29 @@ def cbfs_matching(source_G, target_H, i, j):
         gu = GQ.popleft()
         hu = HQ.popleft()
 
-        # Find matching neighbors
-        N = match_neighbors(gu, hu, source_G, target_H)
+        matching_neighbors = match_neighbors(gu, hu, G, H)
 
-        for gv, hv in N:
+        for gv, hv in matching_neighbors:
             if colors_G[gv] == 'WHITE' and colors_H[hv] == 'WHITE':
-                M.append((gv, hv))
+                M_nodes.append((gv, hv)) # Add matched nodes
+                M_edges.append(((gu, gv), (hu, hv)))  # Add matched edges
                 GQ.append(gv)
                 HQ.append(hv)
                 colors_G[gv] = 'GRAY'
                 colors_H[hv] = 'GRAY'
 
-    not_mask_exist = False
-    for g,h in M:
-        if source_G.nodes[g]['text'] not in ('<NW>','<D>','<A>','<N>','<C>'):
-            #if len(source_G.nodes[g]['text'])>4:
-            not_mask_exist = True
+    #Check if shared graph has at least one not masked text
+    not_masked_text = False
+    for g,_ in M_nodes:
+        if G.nodes[g]['text'] not in ('<NW>','<D>','<A>','<N>','<C>'):
+            #if len(G.nodes[g]['text'])>4:
+            not_masked_text = True
             break
     
-    if not not_mask_exist:
-        M=[]
+    if (not not_masked_text) or (len(M_nodes)==1):
+        return [], []
     
-    return M    
+    return M_nodes, M_edges    
 
 
 def cbfs_matching_score(M, source_graph_shared, target_graph_shared, source_image_size, target_image_size, source_containing_area, target_containing_area):
@@ -1138,59 +1149,70 @@ def cbfs_matching_score(M, source_graph_shared, target_graph_shared, source_imag
     source_graph_matched = source_graph_shared.subgraph([x[0] for x in M])
     target_graph_matched = target_graph_shared.subgraph([x[1] for x in M])
     
-    source_containing_area_matched = area(normalize_box(get_containing_box(source_graph_matched), source_image_size[0], source_image_size[1]))
-    target_containing_area_matched = area(normalize_box(get_containing_box(target_graph_matched), target_image_size[0], target_image_size[1]))
+    if source_image_size is None:
+        source_containing_area_matched = area(get_containing_box(source_graph_matched))
+        target_containing_area_matched = area(get_containing_box(target_graph_matched))
+        
+        score_1 = (len(M)*len(M))/(len(source_graph_shared)*len(target_graph_shared))
+        score_2 = (source_containing_area_matched*target_containing_area_matched)/(source_containing_area*target_containing_area)
+    else:
+        source_containing_area_matched = area(normalize_box(get_containing_box(source_graph_matched), source_image_size[0], source_image_size[1]))
+        target_containing_area_matched = area(normalize_box(get_containing_box(target_graph_matched), target_image_size[0], target_image_size[1]))
 
-    score_1 = len(M)+len(M)
-    score_1 /= len(source_graph_shared)+len(target_graph_shared)
+        score_1 = (len(M)+len(M))/(len(source_graph_shared)+len(target_graph_shared))
+        score_2 = (source_containing_area_matched+target_containing_area_matched)/(source_containing_area+target_containing_area)
     
-    #print(source_containing_area_matched, target_containing_area_matched)
-    score_2 = source_containing_area_matched+target_containing_area_matched
-    score_2 /= source_containing_area+target_containing_area
-    
-    return score_1,score_2
+    return score_1, score_2
 
 
-def get_max_graph(source_graph_shared, target_graph_shared, source_image_size, target_image_size, source_containing_area=1, target_containing_area=1, source_node=None):
+def get_max_graph(G, H, G_image_size, H_image_size, G_area=1, H_area=1, source_node=None):
     max_M = None
+    max_M_edges = None
     max_score=0
-    source_nodes = source_graph_shared.nodes()
+    
+    res_M = []
+    res_M_edges = []
+    
     if source_node:
         source_nodes = [source_node]
+    else:
+        source_nodes = G.nodes()
+        
     for i in source_nodes:
-        for j in target_graph_shared:
-            M = cbfs_matching(source_graph_shared, target_graph_shared, i, j)
+        for j in H:
+            M, M_edges = cbfs_matching(G, H, i, j)
             if len(M)>=2:
-                s1,s2 = cbfs_matching_score(M, source_graph_shared, target_graph_shared, source_image_size, target_image_size, source_containing_area, target_containing_area)
-                s= s1*s2
-                if max_M is None:
+                s1, s2 = cbfs_matching_score(M, G, H, G_image_size, H_image_size, G_area, H_area)
+                s = s1*s2
+                if (max_M is None) or (s>max_score):
                     max_M = M
-                    max_score = s
-                    (I,J) = (i,j)
-                    (S1,S2) = (s1,s2)
-                elif s>max_score:
-                    max_M = M
+                    max_M_edges = M_edges
                     max_score = s
                     (I,J) = (i,j)
                     (S1,S2) = (s1,s2)
     
+    if max_M is not None:
+        res_M.append(max_M)
+        res_M_edges.append(max_M_edges)
+    # Recursive call or remaining graph
     if not source_node:
         if max_M:
-            source_nodes_M = [x[0] for x in max_M]
-            target_nodes_M = [x[1] for x in max_M]
+            G_M = [x[0] for x in max_M]
+            H_M = [x[1] for x in max_M]
             
-            source_nodes_remaining = [x for x in source_graph_shared if x not in source_nodes_M]
-            target_nodes_remaining = [x for x in target_graph_shared if x not in target_nodes_M]
+            G_remaining = [x for x in G if x not in G_M]
+            H_remaining = [x for x in H if x not in H_M]
             
-            if source_nodes_remaining:
-                if target_nodes_remaining:
-                    M_sub = get_max_graph(source_graph_shared.subgraph(source_nodes_remaining), \
-                                        target_graph_shared.subgraph(target_nodes_remaining), \
-                                        source_image_size, target_image_size, source_containing_area, target_containing_area)
+            if G_remaining:
+                if H_remaining:
+                    M_sub, M_edges_sub = get_max_graph(G.subgraph(G_remaining), \
+                                        H.subgraph(H_remaining), \
+                                        G_image_size, H_image_size, G_area, H_area)
                     if M_sub:
-                        max_M.extend(M_sub)
+                        res_M.extend(M_sub)
+                        res_M_edges.extend(M_edges_sub)
                     
-    return max_M
+    return res_M, res_M_edges
 
 
 def get_shortest_path(G, start_node = None, start_edge= None):
@@ -1244,7 +1266,7 @@ def upper_outlier_bound(data, mult = 2.5):
     return upper_bound
        
 
-def frames_dist(a,b, source_graph_shared,target_graph_shared, source_image_size, target_image_size):
+def frames_dist(a, b, source_graph_shared,target_graph_shared, source_image_size=None, target_image_size=None):
     if len(a)==1:
         if len(b)==1:
             if source_graph_shared.nodes[a[0]]['text']==target_graph_shared.nodes[b[0]]['text']:
